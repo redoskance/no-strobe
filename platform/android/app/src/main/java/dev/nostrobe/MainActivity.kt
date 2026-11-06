@@ -10,6 +10,7 @@ import android.media.MediaCodecList
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Size
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -89,6 +90,7 @@ class MainActivity : AppCompatActivity() {
     private var lastScreenWidthDp = 0
     private var lastScreenHeightDp = 0
     private var lastOrientation = 0
+    private var lastCommand: NsJni.NsCommand? = null
 
     /**
      * Hide notification and navigation bars in camera immersive mode (transient on swipe).
@@ -166,6 +168,27 @@ class MainActivity : AppCompatActivity() {
             true
         }
         status = findViewById(R.id.status)
+        var debugTapCount = 0
+        var lastDebugTapMs = 0L
+        status.setOnClickListener {
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastDebugTapMs > 1500L) {
+                debugTapCount = 0
+            }
+            lastDebugTapMs = now
+            debugTapCount++
+            if (debugTapCount in 3..4) {
+                val remaining = 5 - debugTapCount
+                Toast.makeText(this, "Menu debug dans $remaining tap${if (remaining > 1) "s" else ""}...", Toast.LENGTH_SHORT).show()
+            } else if (debugTapCount >= 5) {
+                debugTapCount = 0
+                DiagnosticReport.showDialog(this, camera, lastCommand, currentPreviewSize)
+            }
+        }
+        status.setOnLongClickListener {
+            DiagnosticReport.showDialog(this, camera, lastCommand, currentPreviewSize)
+            true
+        }
         recordButton = findViewById(R.id.record)
         recordButton.setOnClickListener {
             if (recorder == null && timerSecs > 0) startCountdown(timerSecs) { toggleRecord() } else toggleRecord()
@@ -339,7 +362,9 @@ class MainActivity : AppCompatActivity() {
                 }
             },
         ) { cmd ->
+            lastCommand = cmd
             var s = describe(cmd)
+            DiagnosticReport.log("engine", s)
             // Live correction is not available: tell the user when the clip will need it.
             if (recorder != null && cmd.state != NsJni.STATE_LOCKED) s += "  [post needed]"
             android.util.Log.d("nostrobe", s)

@@ -78,6 +78,14 @@ class NoStrobeCamera(
     private var lineRateHz = 0.0
     /** Row readout rate in rows/s, 0 when the device does not publish it. */
     val rowRateHz: Double get() = lineRateHz
+    val currentCameraId: String get() = cameraId
+    val currentPhysicalId: String? get() = activePhysicalId
+    val currentSustainUs: Double get() = sustainUs
+    val currentLineRateHz: Double get() = lineRateHz
+    val isTimingIgnored: Boolean get() = timingIgnored
+    val currentFlickerHz: Double get() = if (lockHz > 0.0) lockHz else (pwm?.frequencyHz() ?: 0.0)
+    val processingTimeUs: Long get() = avgProcessUs
+    private var avgProcessUs = 0L
     private var handler: Handler? = null
     private var analysisThread: HandlerThread? = null
 
@@ -891,6 +899,7 @@ class NoStrobeCamera(
                     100.0 * (frameExposureNs - requestedExposureNs) / maxOf(1L, requestedExposureNs)))
             }
             var lumaMean = 0.0
+            val procStart = System.nanoTime()
             val cmd = if (pwmMode) {
                 if (simFlickerHz > 0.0) {
                     // Simulated flicker: what a PWM light would show at the exposure the sensor
@@ -920,6 +929,8 @@ class NoStrobeCamera(
                 }
                 strobe!!.onFrame(image.timestamp / 1000.0, lumaMean)
             }
+            val elapsedUs = (System.nanoTime() - procStart) / 1000L
+            avgProcessUs = if (avgProcessUs == 0L) elapsedUs else (avgProcessUs * 4 + elapsedUs) / 5
             // ISO that keeps the metered brightness at this exposure; the controller's own
             // ISO has no reference for the scene and is ignored once the budget is known.
             val applied = if (budgetUsIso > 0.0) {

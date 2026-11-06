@@ -119,98 +119,98 @@
             android:textSize="10sp" />
 
             <TextView
-            android:id="@+id/evToggle"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_margin="4dp"
-            android:background="@drawable/bg_tool"
-            android:clickable="true"
-            android:drawableTint="@color/icon_tint"
-            android:drawableTop="@drawable/ic_ev"
-            android:focusable="true"
-            android:gravity="center_horizontal"
-            android:paddingTop="8dp"
-            android:text="EV"
-            android:textColor="@color/icon_tint"
-            android:textSize="10sp" />
+                android:id="@+id/evToggle"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_tool"
+                android:clickable="true"
+                android:drawableTint="@color/icon_tint"
+                android:drawableTop="@drawable/ic_ev"
+                android:focusable="true"
+                android:gravity="center_horizontal"
+                android:paddingTop="8dp"
+                android:text="EV"
+                android:textColor="@color/icon_tint"
+                android:textSize="10sp" />
             </LinearLayout>
 
-    <dev.nostrobe.MaxWidthLinearLayout
-        android:id="@+id/bottomPanel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:background="@drawable/bg_bottom_fade"
-        android:orientation="vertical"
-        android:paddingStart="16dp"
-        android:paddingTop="24dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="8dp">
+        </dev.nostrobe.AspectFrameLayout>
 
-        <LinearLayout
-            android:id="@+id/evPanel"
+        <dev.nostrobe.MaxWidthLinearLayout
+            android:id="@+id/bottomPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingEnd="8dp"
-                android:text="EV"
-                android:textColor="#FFFFFFFF" />
-
-            <SeekBar
-                android:id="@+id/exposureBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:max="0" />
-
-            <TextView
-                android:id="@+id/exposureText"
-                android:layout_width="78dp"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:gravity="end"
-                android:text="+0.0 EV"
-                android:textColor="#FFFFFFFF" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:layout_gravity="bottom|center_horizontal"
+            android:background="@drawable/bg_bottom_fade"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingTop="24dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp">
 
             <LinearLayout
-                android:id="@+id/lensRow"
-                android:layout_width="wrap_content"
+                android:id="@+id/evPanel"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
 
-            <SeekBar
-                android:id="@+id/zoom"
-                android:layout_width="0dp"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:text="EV"
+                    android:textColor="#FFFFFFFF" />
+
+                <SeekBar
+                    android:id="@+id/exposureBar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:max="0" />
+
+                <TextView
+                    android:id="@+id/exposureText"
+                    android:layout_width="78dp"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:gravity="end"
+                    android:text="+0.0 EV"
+                    android:textColor="#FFFFFFFF" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:max="100" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/zoomText"
-                android:layout_width="52dp"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:gravity="end"
-                android:text="1.0x"
-                android:textColor="#FFFFFFFF" />
-        </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/lensRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
 
-    </dev.nostrobe.MaxWidthLinearLayout>
+                <SeekBar
+                    android:id="@+id/zoom"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:max="100" />
 
-        </dev.nostrobe.AspectFrameLayout>
+                <TextView
+                    android:id="@+id/zoomText"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:gravity="end"
+                    android:text="1.0x"
+                    android:textColor="#FFFFFFFF" />
+            </LinearLayout>
+
+        </dev.nostrobe.MaxWidthLinearLayout>
     </FrameLayout>
 
     <LinearLayout

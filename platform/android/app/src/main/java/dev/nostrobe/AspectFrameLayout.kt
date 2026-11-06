@@ -40,8 +40,11 @@ class AspectFrameLayout @JvmOverloads constructor(
         }
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             || maxW > maxH
+        val isUnfolded = resources.configuration.smallestScreenWidthDp >= 600
         val targetRatio = aspectWidth.toFloat() / aspectHeight.toFloat()
-        val ratio = if (isLandscape) targetRatio else (1f / targetRatio)  // width / height
+        // On an unfolded screen (tablet/foldable opened flat) or in landscape, the video viewfinder
+        // is 16:9 (width > height). Only on a narrow phone held vertically is it 9:16 portrait.
+        val ratio = if (isLandscape || isUnfolded) targetRatio else (1f / targetRatio)  // width / height
         var w = maxW
         var h = (maxW / ratio).toInt()
         if (h > maxH) {

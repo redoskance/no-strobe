@@ -20,6 +20,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import android.content.ContentValues
 import android.net.Uri
@@ -82,6 +85,19 @@ class MainActivity : AppCompatActivity() {
     private var evMinIndex = 0
     private var pendingMeta: java.io.Writer? = null
     private var currentPreviewSize = Size(1920, 1080)
+    private var lastScreenWidthDp = 0
+    private var lastScreenHeightDp = 0
+    private var lastOrientation = 0
+
+    /**
+     * Hide notification and navigation bars in camera immersive mode (transient on swipe).
+     */
+    private fun applyImmersiveMode() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
 
     /**
      * Choose the largest 16:9 preview size up to 1080p supported by the camera.
@@ -103,7 +119,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        layoutPortrait = resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        applyImmersiveMode()
+        val config = resources.configuration
+        lastScreenWidthDp = config.screenWidthDp
+        lastScreenHeightDp = config.screenHeightDp
+        lastOrientation = config.orientation
+        layoutPortrait = config.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
         setContentView(R.layout.main)
         surfaceView = findViewById(R.id.preview)
         val aspectLayout = findViewById<AspectFrameLayout?>(R.id.aspectLayout)
@@ -233,10 +254,28 @@ class MainActivity : AppCompatActivity() {
     /** The manifest keeps the activity alive on fold/rotation, so the layout has to be inflated again by hand. */
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        val portrait = newConfig.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (portrait == layoutPortrait) return
+        applyImmersiveMode()
+        val sizeChanged = newConfig.screenWidthDp != lastScreenWidthDp ||
+                          newConfig.screenHeightDp != lastScreenHeightDp ||
+                          newConfig.orientation != lastOrientation
+        if (!sizeChanged) return
+        lastScreenWidthDp = newConfig.screenWidthDp
+        lastScreenHeightDp = newConfig.screenHeightDp
+        lastOrientation = newConfig.orientation
         if (recorder != null) { relayoutAfterRecording = true; return }
         recreate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyImmersiveMode()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            applyImmersiveMode()
+        }
     }
 
     override fun onPause() {

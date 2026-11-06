@@ -53,7 +53,7 @@ object DiagnosticReport {
         sb.appendLine("*Généré le / Generated at: $time*")
         sb.appendLine()
 
-        sb.appendLine("### 📱 Appareil & Système / Device & OS")
+        sb.appendLine("### Appareil & Système / Device & OS")
         sb.appendLine("- **Fabricant / Manufacturer**: ${Build.MANUFACTURER}")
         sb.appendLine("- **Modèle / Model**: ${Build.MODEL} (${Build.PRODUCT} / ${Build.DEVICE})")
         sb.appendLine("- **Version Android**: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
@@ -67,7 +67,7 @@ object DiagnosticReport {
         sb.appendLine("- **Fenêtre / Screen**: ${config.screenWidthDp}x${config.screenHeightDp} dp ($orientation, sw=${config.smallestScreenWidthDp}dp ${if (isTablet) "[Unfolded/Tablet]" else "[Folded/Phone]"})")
         sb.appendLine()
 
-        sb.appendLine("### 📷 Caractéristiques Caméra / Camera Characteristics")
+        sb.appendLine("### Caractéristiques Caméra / Camera Characteristics")
         val camId = camera?.currentCameraId ?: "0"
         val physId = camera?.currentPhysicalId
         sb.appendLine("- **Caméra active**: ID $camId ${if (physId != null) "(Objectif physique épinglé: $physId)" else "(Caméra logique)"}")
@@ -99,13 +99,13 @@ object DiagnosticReport {
         val sustainUs = camera?.currentSustainUs ?: 0.0
         val lineRate = camera?.currentLineRateHz ?: 0.0
         sb.appendLine("- **Rolling Shutter Skew**: ${"%.2f".format(Locale.US, sustainUs / 1000.0)} ms (Cadence lecture lignes: ${"%.0f".format(Locale.US, lineRate)} Hz)")
-        sb.appendLine("- **Durée d'image respectée**: ${if (camera?.isTimingIgnored == true) "❌ NON (capteur ignore SENSOR_FRAME_DURATION)" else "✅ OUI"}")
+        sb.appendLine("- **Durée d'image respectée**: ${if (camera?.isTimingIgnored == true) "NON (capteur ignore SENSOR_FRAME_DURATION)" else "OUI"}")
         if (previewSize != null) {
             sb.appendLine("- **Géométrie du viseur**: ${previewSize.width}x${previewSize.height} (16:9)")
         }
         sb.appendLine()
 
-        sb.appendLine("### ⚡ Moteur Anti-scintillement & Suivi / Flicker Engine")
+        sb.appendLine("### Moteur Anti-scintillement & Suivi / Flicker Engine")
         if (lastCmd != null) {
             val modeStr = when (lastCmd.mode) {
                 NsJni.MODE_PWM -> "PWM (Rolling Shutter De-banding)"
@@ -116,8 +116,8 @@ object DiagnosticReport {
                 else -> "Mode ${lastCmd.mode}"
             }
             val stateStr = when (lastCmd.state) {
-                NsJni.STATE_LOCKED -> "🔒 VERROUILLÉ / LOCKED"
-                NsJni.STATE_SEARCH -> "🔍 RECHERCHE / SEARCHING"
+                NsJni.STATE_LOCKED -> "VERROUILLÉ / LOCKED"
+                NsJni.STATE_SEARCH -> "RECHERCHE / SEARCHING"
                 else -> "État ${lastCmd.state}"
             }
             sb.appendLine("- **Mode**: $modeStr")
@@ -133,7 +133,7 @@ object DiagnosticReport {
         }
         sb.appendLine()
 
-        sb.appendLine("### 🚀 Performances & Runtime")
+        sb.appendLine("### Performances & Runtime")
         val runtime = Runtime.getRuntime()
         val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
         val maxMem = runtime.maxMemory() / (1024 * 1024)
@@ -146,7 +146,7 @@ object DiagnosticReport {
         sb.appendLine("- **Pipeline graphique**: Vulkan Skia")
         sb.appendLine()
 
-        sb.appendLine("### 📜 Événements récents / Event Log")
+        sb.appendLine("### Événements récents / Event Log")
         val logs = getLogs()
         if (logs.isNotEmpty()) {
             sb.appendLine("```")

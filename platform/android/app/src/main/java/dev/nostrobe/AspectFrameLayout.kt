@@ -6,8 +6,8 @@ import android.widget.FrameLayout
 
 /**
  * A FrameLayout that keeps the viewfinder's aspect ratio inside the space it is given: 16:9 when
- * the screen is wider than tall (landscape, or a foldable opened flat and held sideways), 9:16
- * otherwise. The camera frame is only scaled into the box, so a box with the frame's own
+ * the screen is rotated into landscape (rotation 90/270), 9:16 when upright (rotation 0/180).
+ * The camera frame is only scaled into the box, so a box with the frame's own
  * ratio shows it undistorted.
  */
 class AspectFrameLayout @JvmOverloads constructor(
@@ -38,13 +38,14 @@ class AspectFrameLayout @JvmOverloads constructor(
             super.onMeasure(widthSpec, heightSpec)
             return
         }
-        val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            || maxW > maxH
-        val isUnfolded = resources.configuration.smallestScreenWidthDp >= 600
+        @Suppress("DEPRECATION")
+        val displayRotation = (context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager)
+            ?.defaultDisplay?.rotation ?: android.view.Surface.ROTATION_0
+        val isLandscape = displayRotation == android.view.Surface.ROTATION_90 ||
+                          displayRotation == android.view.Surface.ROTATION_270
         val targetRatio = aspectWidth.toFloat() / aspectHeight.toFloat()
-        // On an unfolded screen (tablet/foldable opened flat) or in landscape, the video viewfinder
-        // is 16:9 (width > height). Only on a narrow phone held vertically is it 9:16 portrait.
-        val ratio = if (isLandscape || isUnfolded) targetRatio else (1f / targetRatio)  // width / height
+        // 16:9 when rotated sideways, 9:16 when held upright (the camera sensor is mounted at 90°).
+        val ratio = if (isLandscape) targetRatio else (1f / targetRatio)  // width / height
         var w = maxW
         var h = (maxW / ratio).toInt()
         if (h > maxH) {

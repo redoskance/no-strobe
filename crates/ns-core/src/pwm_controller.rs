@@ -208,6 +208,20 @@ impl PwmController {
         }
     }
 
+    pub fn set_line_rate(&mut self, line_rate_hz: f64) {
+        if line_rate_hz > 0.0 {
+            let was_unknown = self.line_rate_hz <= 0.0;
+            self.line_rate_hz = line_rate_hz;
+            if was_unknown && self.phase != Phase::Locked {
+                self.phase = Phase::Search;
+            }
+        }
+    }
+
+    pub fn line_rate(&self) -> f64 {
+        self.line_rate_hz
+    }
+
     pub fn pipeline_depth(&self) -> f64 {
         self.pipeline_depth
     }

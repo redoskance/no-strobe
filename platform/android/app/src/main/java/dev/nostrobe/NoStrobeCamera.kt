@@ -86,8 +86,12 @@ class NoStrobeCamera(
     // exposure, so a frame is only fed to it if the exposure the sensor really used
     // (CaptureResult, matched by SENSOR_TIMESTAMP) is the one last requested.
     private var requestedExposureNs = 0L
+    private var requestedFrameDurationNs = 0L
     private var latestResultExposureNs = 0L
     private val resultExposure = HashMap<Long, Long>()
+    private var lastCaptureTs = 0L
+    private var timingMismatches = 0
+    private var timingIgnored = false
     private var staleFrames = 0
     private var lastAfState: Int? = null
     private var lastFocusDiopters = -1f
@@ -220,6 +224,42 @@ class NoStrobeCamera(
             }
             val ts = result.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
             val e = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: return
+
+            // Standard Camera2 rolling shutter skew (API 21+): directly yields accurate line readout rate
+            val skewNs = result.get(CaptureResult.SENSOR_ROLLING_SHUTTER_SKEW)
+            if (skewNs != null && skewNs > 0L) {
+                val skewUs = skewNs / 1000.0
+                if (sustainUs <= 0.0 || abs(sustainUs - skewUs) > 100.0) {
+                    sustainUs = skewUs
+                    val h = reader?.height ?: 1080
+                    val computedRate = LineProfileExtractor.lineRate(h, skewNs.toDouble())
+                    if (computedRate > 0.0) {
+                        lineRateHz = computedRate
+                        pwm?.setLineRate(computedRate)
+                        Log.i(TAG, "sensor rolling shutter skew: %.2f ms -> line rate %.0f Hz".format(
+                            sustainUs / 1000.0, computedRate
+                        ))
+                    }
+                }
+            }
+
+            // Track frame interval vs requested duration to detect if sensor ignores SENSOR_FRAME_DURATION
+            if (lastCaptureTs > 0L && requestedFrameDurationNs > 0L) {
+                val interval = ts - lastCaptureTs
+                if (abs(interval - requestedFrameDurationNs) > 4_000_000L && interval < 500_000_000L) {
+                    timingMismatches++
+                    if (timingMismatches == 30 && !timingIgnored) {
+                        timingIgnored = true
+                        Log.w(TAG, "sensor ignores SENSOR_FRAME_DURATION: actual interval %.1f ms vs requested %.1f ms".format(
+                            interval / 1e6, requestedFrameDurationNs / 1e6
+                        ))
+                    }
+                } else {
+                    timingMismatches = 0
+                }
+            }
+            lastCaptureTs = ts
+
             if (requestedExposureNs == 0L) {
                 val iso = result.get(CaptureResult.SENSOR_SENSITIVITY)
                 val ae = result.get(CaptureResult.CONTROL_AE_STATE)
@@ -907,9 +947,11 @@ class NoStrobeCamera(
             if (needsUpdate(last, applied)) {
                 last = applied
                 val b = builder!!
-                Camera2Sync.apply(b, applied)
+                val chars = runCatching { manager.getCameraCharacteristics(activePhysicalId ?: cameraId) }.getOrNull()
+                Camera2Sync.apply(b, applied, chars)
                 applyZoom(b)
                 requestedExposureNs = (cmd.exposureUs * 1000.0).toLong()
+                requestedFrameDurationNs = if (applied.fps > 0) (1_000_000_000.0 / applied.fps).toLong() else 0L
                 session?.setRepeatingRequest(b.build(), resultCallback, handler)
             }
         } catch (e: IllegalStateException) {
@@ -926,6 +968,8 @@ class NoStrobeCamera(
         probeSinceMs = 0L
         pwm?.close(); pwm = null
         requestedExposureNs = 0L
+        requestedFrameDurationNs = 0L
+        timingMismatches = 0
         budgetUsIso = 0.0
         latestAutoBudget = 0.0
         autoWait = 0

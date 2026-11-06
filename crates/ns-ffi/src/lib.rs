@@ -180,6 +180,17 @@ pub unsafe extern "C" fn ns_set_pipeline_depth(handle: *mut PwmController, depth
     (*handle).set_pipeline_depth(depth);
 }
 
+/// Sets or updates the sensor row readout rate (Hz).
+///
+/// # Safety
+/// `handle` must come from `ns_create_pwm`.
+#[no_mangle]
+pub unsafe extern "C" fn ns_set_line_rate(handle: *mut PwmController, line_rate_hz: f64) {
+    if !handle.is_null() {
+        (*handle).set_line_rate(line_rate_hz);
+    }
+}
+
 /// Compute per-row gains to flatten rolling-shutter banding in one frame.
 /// Returns the estimated flicker frequency in Hz.
 ///

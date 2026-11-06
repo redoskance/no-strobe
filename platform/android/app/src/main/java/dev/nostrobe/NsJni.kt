@@ -67,6 +67,7 @@ object NsJni {
     private external fun nativeSetMinExposure(handle: Long, us: Double)
     private external fun nativeSetMaxExposure(handle: Long, us: Double)
     private external fun nativeSetPipelineDepth(handle: Long, depth: Double)
+    private external fun nativeSetLineRate(handle: Long, lineRateHz: Double)
     private external fun nativePredictLeadPhase(handle: Long): Double
     private external fun nativeSyntheticProfile(
         exposureUs: Double, fHz: Double, phaseCycles: Double, duty: Double, lineRateHz: Double, rows: Int,
@@ -275,6 +276,11 @@ object NsJni {
         /** Camera hardware pipeline depth in frames (CameraCharacteristics.REQUEST_PIPELINE_MAX_DEPTH). */
         fun setPipelineDepth(depth: Double) {
             nativeSetPipelineDepth(handle, depth)
+        }
+
+        /** Update or set the row readout rate in Hz (height / skew) if learned dynamically. */
+        fun setLineRate(lineRateHz: Double) {
+            nativeSetLineRate(handle, lineRateHz)
         }
 
         /** Predicts lead flicker phase in radians compensated for camera pipeline depth. */

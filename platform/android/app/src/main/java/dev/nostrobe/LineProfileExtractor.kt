@@ -61,13 +61,20 @@ object LineProfileExtractor {
     /**
      * Row readout rate in rows per second.
      *
-     * Android publishes `SENSOR_INFO_ROLLING_SHUTTER_SUSTAIN_DURATION` (nanoseconds):
+     * Computed from rolling shutter sustain or per-frame skew (nanoseconds):
      * the time the sensor takes to read out all rows. `height / sustain` is the rate.
      * Returns 0.0 when the device does not publish it, which puts the controller in
-     * sweep-calibration mode.
+     * sweep-calibration mode until skew is reported in CaptureResult.
      */
     fun lineRate(height: Int, sustainNs: Double): Double {
         if (sustainNs <= 0.0) return 0.0
         return height.toDouble() * 1e9 / sustainNs
     }
+
+    /**
+     * Slices the frame into [bands] horizontal bands and computes average luma per band (0..1).
+     * Used for slow strobe (~15 Hz) phase tracking.
+     */
+    fun bandLuminance(image: Image, bands: Int = 16): DoubleArray =
+        StrobeLock.bandLuminance(image, bands)
 }

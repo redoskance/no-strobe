@@ -51,12 +51,28 @@ object Camera2Sync {
     }
 
     /**
+     * Pick the best matching target FPS range supported by the device.
+     */
+    fun selectFpsRange(chars: CameraCharacteristics, targetFps: Int): Range<Int> {
+        val available = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+        if (available == null || available.isEmpty()) return Range(targetFps, targetFps)
+        // 1. Exact match [targetFps, targetFps]
+        available.firstOrNull { it.lower == targetFps && it.upper == targetFps }?.let { return it }
+        // 2. Fixed range with upper == targetFps
+        available.firstOrNull { it.upper == targetFps }?.let { return it }
+        // 3. Enclosing range
+        available.firstOrNull { targetFps in it.lower..it.upper }?.let { return it }
+        // 4. Closest upper bound
+        return available.minByOrNull { kotlin.math.abs(it.upper - targetFps) } ?: Range(targetFps, targetFps)
+    }
+
+    /**
      * Manual exposure for one frame. AE must be off, otherwise the 3A routine overwrites
      * these values. Frame duration is set so the frame period stays an integer multiple of
      * the strobe period; fps is kept in the AE range key for devices that ignore
      * SENSOR_FRAME_DURATION.
      */
-    fun apply(builder: CaptureRequest.Builder, cmd: NsCommand) {
+    fun apply(builder: CaptureRequest.Builder, cmd: NsCommand, chars: CameraCharacteristics? = null) {
         val fps = cmd.fps.toInt()
         builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
         builder.set(CaptureRequest.CONTROL_CAPTURE_INTENT, CameraMetadata.CONTROL_CAPTURE_INTENT_MANUAL)
@@ -69,6 +85,7 @@ object Camera2Sync {
             CaptureRequest.SENSOR_FRAME_DURATION,
             (1_000_000.0 / cmd.fps * NS_PER_US).toLong(),
         )
-        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(fps, fps))
+        val fpsRange = chars?.let { selectFpsRange(it, fps) } ?: Range(fps, fps)
+        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange)
     }
 }

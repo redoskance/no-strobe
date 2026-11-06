@@ -335,6 +335,18 @@ pub extern "system" fn Java_dev_nostrobe_NsJni_nativeSetPipelineDepth(
     ctrl.set_pipeline_depth(depth);
 }
 
+/// Sets or updates the sensor row readout rate (Hz).
+#[no_mangle]
+pub extern "system" fn Java_dev_nostrobe_NsJni_nativeSetLineRate(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    line_rate_hz: jdouble,
+) {
+    let ctrl = unsafe { &mut *(handle as *mut PwmController) };
+    ctrl.set_line_rate(line_rate_hz);
+}
+
 /// Predicts the lead flicker phase in radians compensated for camera pipeline depth.
 #[no_mangle]
 pub extern "system" fn Java_dev_nostrobe_NsJni_nativePredictLeadPhase(

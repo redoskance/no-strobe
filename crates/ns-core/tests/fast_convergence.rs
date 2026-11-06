@@ -132,4 +132,34 @@ fn test_fast_convergence_in_under_500ms() {
     assert!(controller.pll().unwrap().confidence() > 0.3, "PLL confidence should be high");
 }
 
+#[test]
+fn test_dynamic_line_rate_update() {
+    // Controller created with unknown line rate (0.0)
+    let mut controller = PwmController::new(limits(), 0.0);
+    assert_eq!(controller.line_rate(), 0.0);
+
+    let f_target = 500.0;
+    let scene = synthetic_structured_scene();
+    let fl1 = pwm::synthetic_profile(750.0, f_target, 0.0, 0.35, LINE_RATE, ROWS);
+    let profile1: Vec<f64> = fl1.iter().zip(&scene).map(|(&f, &s)| s * (0.85 + 0.15 * f)).collect();
+
+    // First frame with line_rate = 0 falls into blind sweep
+    let cmd1 = controller.on_profile(&profile1);
+    assert_eq!(cmd1.state, State::Search);
+
+    // Dynamic update when rolling shutter skew is discovered
+    controller.set_line_rate(LINE_RATE);
+    assert_eq!(controller.line_rate(), LINE_RATE);
+
+    // Frame 2 with line rate active and rolling phase
+    let fl2 = pwm::synthetic_profile(750.0, f_target, 0.33, 0.35, LINE_RATE, ROWS);
+    let profile2: Vec<f64> = fl2.iter().zip(&scene).map(|(&f, &s)| s * (0.85 + 0.15 * f)).collect();
+    let cmd2 = controller.on_profile(&profile2);
+
+    let period_us = 1e6 / f_target;
+    let k = (cmd2.exposure_us / period_us).round();
+    assert!((cmd2.exposure_us - k * period_us).abs() < 0.05 * period_us);
+    assert!((controller.frequency_hz() - f_target).abs() < 5.0);
+}
+
 

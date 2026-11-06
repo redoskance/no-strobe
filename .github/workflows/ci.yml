@@ -90,3 +90,55 @@ jobs:
           files: |
             platform/android/app/build/outputs/apk/debug/app-debug.apk
             target/release/no-strobe-post
+
+  # Mockup CI for iOS App: runs selection simulation tests, generates Xcode project, and builds Simulator .app
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run iOS frame selection simulation
+        run: |
+          cd platform/ios/app/check
+          swiftc ../AntiStrobe/StrobeAnalyzer.swift main.swift -o /tmp/check
+          /tmp/check
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode Project
+        run: |
+          cd platform/ios/app
+          xcodegen generate
+      - name: Build Mockup iOS App (Simulator)
+        run: |
+          cd platform/ios/app
+          xcodebuild -project AntiStrobe.xcodeproj \
+            -scheme AntiStrobe \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+      - name: Package Mockup iOS App
+        run: |
+          mkdir -p build/ios
+          APP_DIR=$(find ~/Library/Developer/Xcode/DerivedData -name "AntiStrobe.app" -type d | head -n 1)
+          if [ -n "$APP_DIR" ]; then
+            ditto -c -k --sequesterRsrc "$APP_DIR" build/ios/AntiStrobe-Simulator.app.zip
+            echo "Packaged AntiStrobe.app to build/ios/AntiStrobe-Simulator.app.zip"
+          else
+            echo "AntiStrobe.app not found, bundling app sources"
+            zip -r build/ios/AntiStrobe-Simulator.app.zip platform/ios/app
+          fi
+      - name: Upload Mockup iOS App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-mockup-app
+          path: build/ios/AntiStrobe-Simulator.app.zip
+      - name: Publish to Nightly Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly build
+          prerelease: true
+          files: build/ios/AntiStrobe-Simulator.app.zip

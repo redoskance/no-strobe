@@ -1,28 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Material 3 Palette for No Strobe Camera -->
-    <color name="m3_surface">#121316</color>
-    <color name="m3_surface_container">#1A1C20</color>
-    <color name="m3_surface_container_high">#26282E</color>
-    <color name="m3_surface_container_highest">#31343C</color>
+    <!-- Material 3 Light Palette for No Strobe -->
+    <color name="m3_surface">#F8F9FA</color>
+    <color name="m3_surface_container">#EDF2F2</color>
+    <color name="m3_surface_container_high">#E2E8E8</color>
+    <color name="m3_surface_container_highest">#D6DDDD</color>
 
-    <color name="m3_primary">#5EEAD4</color>
-    <color name="m3_primary_container">#115E59</color>
-    <color name="m3_on_primary_container">#CCFBF1</color>
+    <color name="m3_on_surface">#1A1C20</color>
+    <color name="m3_on_surface_variant">#404848</color>
 
-    <color name="m3_secondary">#7DD3FC</color>
-    <color name="m3_secondary_container">#0369A1</color>
+    <color name="m3_primary">#006A60</color>
+    <color name="m3_primary_container">#73F8E7</color>
+    <color name="m3_on_primary_container">#00201C</color>
+
+    <color name="m3_secondary">#006688</color>
+    <color name="m3_secondary_container">#BFE8FF</color>
 
     <!-- Status Indicators -->
-    <color name="m3_status_locked">#10B981</color>
-    <color name="m3_status_locked_container">#064E3B</color>
-    <color name="m3_status_scanning">#F59E0B</color>
-    <color name="m3_status_scanning_container">#78350F</color>
-    <color name="m3_status_recording">#EF4444</color>
+    <color name="m3_status_locked">#059669</color>
+    <color name="m3_status_locked_container">#D1FAE5</color>
+    <color name="m3_status_scanning">#D97706</color>
+    <color name="m3_status_scanning_container">#FEF3C7</color>
+    <color name="m3_status_recording">#DC2626</color>
 
-    <!-- Translucent Frosted Glass Materials -->
-    <color name="m3_glass_pill">#801A1C20</color>
-    <color name="m3_glass_stroke">#33FFFFFF</color>
-    <color name="m3_glass_tool">#6626282E</color>
-    <color name="m3_glass_tool_selected">#B3115E59</color>
+    <!-- Frosted Glass Materials for Light Mode -->
+    <color name="m3_glass_pill">#E6FFFFFF</color>
+    <color name="m3_glass_stroke">#26000000</color>
+    <color name="m3_glass_tool">#B3EDF2F2</color>
+    <color name="m3_glass_tool_selected">#E073F8E7</color>
 </resources>

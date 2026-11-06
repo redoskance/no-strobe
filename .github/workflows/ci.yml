@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -38,15 +38,15 @@ jobs:
       - run: gradle :app:testDebugUnitTest
         working-directory: platform/android
 
-  # The APK: native library for both ABIs, then the Gradle build. Published as the nightly release.
-  apk:
+  # The Apps: Android APK (with native library for both ABIs) and desktop post-processing tool.
+  apps:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -72,6 +72,8 @@ jobs:
       - run: cargo install cargo-ndk --locked
       - name: Build libns_ffi.so for both ABIs
         run: cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs build -p ns-ffi --release --features android
+      - name: Build desktop post-processing tool
+        run: cargo build --release -p ns-post
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.1'
@@ -85,4 +87,6 @@ jobs:
           tag_name: nightly
           name: Nightly build
           prerelease: true
-          files: platform/android/app/build/outputs/apk/debug/app-debug.apk
+          files: |
+            platform/android/app/build/outputs/apk/debug/app-debug.apk
+            target/release/no-strobe-post

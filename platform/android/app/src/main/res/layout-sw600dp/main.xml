@@ -49,7 +49,7 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
-        android:background="#FF121316"
+        android:background="@color/m3_surface"
         android:gravity="center_horizontal"
         android:orientation="vertical"
         android:paddingStart="24dp"
@@ -146,7 +146,7 @@
             android:paddingEnd="20dp"
             android:paddingBottom="10dp"
             android:text="search"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/m3_on_surface"
             android:textSize="14sp" />
 
         <!-- Flexible Spacer -->
@@ -180,7 +180,7 @@
                     android:layout_height="wrap_content"
                     android:paddingEnd="8dp"
                     android:text="EV"
-                    android:textColor="#FFFFFFFF" />
+                    android:textColor="@color/m3_on_surface" />
 
                 <SeekBar
                     android:id="@+id/exposureBar"
@@ -196,7 +196,7 @@
                     android:fontFamily="monospace"
                     android:gravity="end"
                     android:text="+0.0 EV"
-                    android:textColor="#FFFFFFFF" />
+                    android:textColor="@color/m3_on_surface" />
             </LinearLayout>
 
             <!-- Lens Selector Row -->
@@ -229,7 +229,7 @@
                     android:fontFamily="monospace"
                     android:gravity="end"
                     android:text="1.0x"
-                    android:textColor="#FFFFFFFF" />
+                    android:textColor="@color/m3_on_surface" />
             </LinearLayout>
 
         </dev.nostrobe.MaxWidthLinearLayout>

@@ -54,7 +54,7 @@
             android:paddingEnd="14dp"
             android:paddingBottom="7dp"
             android:text="search"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/m3_on_surface"
             android:textSize="12sp" />
 
         <LinearLayout
@@ -156,7 +156,7 @@
                 android:layout_height="wrap_content"
                 android:paddingEnd="8dp"
                 android:text="EV"
-                android:textColor="#FFFFFFFF" />
+                android:textColor="@color/m3_on_surface" />
 
             <SeekBar
                 android:id="@+id/exposureBar"
@@ -172,7 +172,7 @@
                 android:fontFamily="monospace"
                 android:gravity="end"
                 android:text="+0.0 EV"
-                android:textColor="#FFFFFFFF" />
+                android:textColor="@color/m3_on_surface" />
         </LinearLayout>
 
         <LinearLayout
@@ -201,7 +201,7 @@
                 android:fontFamily="monospace"
                 android:gravity="end"
                 android:text="1.0x"
-                android:textColor="#FFFFFFFF" />
+                android:textColor="@color/m3_on_surface" />
         </LinearLayout>
 
         <FrameLayout

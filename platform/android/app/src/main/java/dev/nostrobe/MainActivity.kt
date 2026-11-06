@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.google.android.material.color.DynamicColors
 import java.io.File
 import android.content.ContentValues
 import android.net.Uri
@@ -97,6 +98,10 @@ class MainActivity : AppCompatActivity() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
+        val isNight = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                      android.content.res.Configuration.UI_MODE_NIGHT_YES
+        controller.isAppearanceLightStatusBars = !isNight
+        controller.isAppearanceLightNavigationBars = !isNight
     }
 
     /**
@@ -118,6 +123,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(savedInstanceState)
         applyImmersiveMode()
         val config = resources.configuration

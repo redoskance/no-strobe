@@ -161,6 +161,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        android.util.Log.i("nostrobe", "lifecycle: onCreate (saved=${savedInstanceState != null})")
         DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(savedInstanceState)
         applyImmersiveMode()
@@ -421,6 +422,7 @@ class MainActivity : AppCompatActivity() {
     /** The manifest keeps the activity alive on fold/rotation, so the layout has to be inflated again by hand. */
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        android.util.Log.i("nostrobe", "lifecycle: onConfigurationChanged orientation=${newConfig.orientation} (recording=${recorder != null})")
         applyImmersiveMode()
         val sizeChanged = newConfig.screenWidthDp != lastScreenWidthDp ||
                           newConfig.screenHeightDp != lastScreenHeightDp ||
@@ -435,6 +437,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        android.util.Log.i("nostrobe", "lifecycle: onResume")
         applyImmersiveMode()
         resumedNow = true
         if (relayoutAfterRecording && recorder == null) { relayoutAfterRecording = false; recreate(); return }
@@ -450,14 +453,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        android.util.Log.i("nostrobe", "lifecycle: onPause (recording=${recorder != null})")
+        // A pause alone is a dialog or a shade over a screen that is still visible: the system's microphone
+        // privacy prompt ("unblock the microphone?", when the privacy switch is off), a permission request,
+        // the notification shade. It must NOT end a recording (it did: a clip of 0.3 s on a Pixel 10 Pro XL
+        // whose microphone switch was off). Ending the recording belongs to onStop.
         resumedNow = false
+        super.onPause()
+    }
+
+    override fun onStop() {
+        android.util.Log.i("nostrobe", "lifecycle: onStop (recording=${recorder != null})")
+        // Not visible any more (home, another app, screen off): the camera goes with it.
         countdownHandler.removeCallbacksAndMessages(null)
         countdownText.visibility = android.view.View.GONE
         recordButton.isEnabled = !OnDevicePost.isProcessing
         camera?.closeMeta()
         if (recorder != null) endRecordingNow()
         recordButton.isSelected = false
-        super.onPause()
+        super.onStop()
     }
 
     private fun startCamera() {
@@ -1103,6 +1117,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        android.util.Log.i("nostrobe", "lifecycle: onDestroy (changingConfig=$isChangingConfigurations)")
         postProcessingListener?.let { OnDevicePost.removeListener(it) }
         super.onDestroy()
     }

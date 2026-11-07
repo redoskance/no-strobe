@@ -59,21 +59,24 @@ fn ok(o: &Outcome) -> bool {
 }
 
 /// What the detector can resolve from the mean luma of frames. The strobe period comes from the pulse
-/// TIMES (epoch folding), which no longer mistakes a strobe for a multiple of itself.
+/// TIMES (epoch folding), which no longer mistakes a strobe for a multiple of itself, and the search
+/// exposure covers most of the frame so that a flash cannot fall in the gap between two exposure windows.
 ///
 /// Limits that remain, by physics and not by bug, and are not asserted:
-/// - above half the frame rate (15 Hz at 30 fps) the frames alias the strobe: 60 fps is needed up to 30 Hz;
-/// - a flash of 5 % of the period is shorter than the gap between two 8 ms exposure windows at 30 fps and
-///   can fall in the gap every time (5 and 10 Hz are then not seen); 20 Hz at 60 fps with such a flash too.
+/// - above half the frame rate (15 Hz at 30 fps) the frames alias the strobe: 60 fps is needed up to 30 Hz.
+///   The phone may run at 30 fps even when 60 is asked (a Pixel 10 Pro XL does in a dark room);
+/// - a flash of 5 % of the period at 5 or 10 Hz and 30 fps is too faint in a frame-long exposure.
 #[test]
 fn strobe_from_1_to_20_hz_locks_on_the_right_period_in_band() {
+    let all = vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0];
     let mut failures = Vec::new();
     for (fps, duty, freqs) in [
-        (60.0, 0.35, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0]),
-        (60.0, 0.15, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0]),
-        (60.0, 0.05, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0]),
+        (60.0, 0.35, all.clone()),
+        (60.0, 0.15, all.clone()),
+        (60.0, 0.05, all.clone()),
         (30.0, 0.35, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
-        (30.0, 0.15, vec![1.0, 2.0, 3.0, 5.0, 7.0]),
+        (30.0, 0.15, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
+        (30.0, 0.05, vec![1.0, 2.0, 3.0, 7.0]),
     ] {
         for f in freqs {
             let o = run(f, duty, fps, 600);

@@ -41,6 +41,8 @@ impl Default for Command {
 /// Short exposure used while searching. A long exposure integrates whole strobe cycles and
 /// flattens the signal, so detection needs a narrow sampling window.
 const SEARCH_EXPOSURE_US: f64 = 8_000.0;
+/// Share of the frame time the search exposure covers.
+const SEARCH_FRAME_FRACTION: f64 = 0.9;
 
 pub struct Controller {
     pub limits: CameraLimits,
@@ -59,7 +61,7 @@ impl Controller {
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .copied()
             .unwrap_or(30.0);
-        let exposure = search_exposure(&limits);
+        let exposure = search_exposure(&limits, 1e6 / fps);
         Self {
             limits,
             buf: SignalBuffer::new(240),
@@ -96,7 +98,7 @@ impl Controller {
     fn search(&mut self) -> Command {
         if self.buf.len() < self.warmup_frames {
             self.last_command = Command {
-                exposure_us: search_exposure(&self.limits),
+                exposure_us: search_exposure(&self.limits, 1e6 / self.last_command.fps.max(1.0)),
                 fps: self.last_command.fps,
                 ..Command::default()
             };
@@ -129,7 +131,7 @@ impl Controller {
         }
 
         self.last_command = Command {
-            exposure_us: search_exposure(&self.limits),
+            exposure_us: search_exposure(&self.limits, 1e6 / self.last_command.fps.max(1.0)),
             fps: self.last_command.fps,
             ..Command::default()
         };
@@ -177,6 +179,11 @@ impl Controller {
     }
 }
 
-fn search_exposure(limits: &CameraLimits) -> f64 {
-    limits.min_exposure_us.max(limits.max_exposure_us.min(SEARCH_EXPOSURE_US))
+/// Search with an exposure of most of a frame: a flash lands in some frame's window almost always, whatever
+/// the strobe rate. With 8 ms of a 33 ms frame a 10 Hz strobe (exactly 3 frames per period, so the phase never
+/// moves) whose flash fell in the 25 ms gap was never seen: measured on a Pixel 10 Pro XL running at 30 fps in a
+/// dark room. The pulse is a smaller part of a longer exposure, but the light it adds is the same.
+fn search_exposure(limits: &CameraLimits, frame_us: f64) -> f64 {
+    let target = (SEARCH_FRAME_FRACTION * frame_us).max(SEARCH_EXPOSURE_US);
+    limits.min_exposure_us.max(limits.max_exposure_us.min(target))
 }

@@ -1178,6 +1178,7 @@ class MainActivity : AppCompatActivity() {
     private fun finishClip() {
         val clip = currentRecordingFile ?: File(externalCacheDir ?: cacheDir, "clip.mp4")
         if (!clip.exists() || clip.length() == 0L) return
+        try { clip.setReadable(true, false) } catch (_: Exception) {}
         lastClip = clip
         postButton.visibility = android.view.View.VISIBLE
         postButton.text = getString(R.string.btn_gallery)

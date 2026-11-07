@@ -270,6 +270,7 @@ class GalleryActivity : AppCompatActivity() {
             if (d.exists() && d.isDirectory) {
                 d.listFiles()?.forEach { f ->
                     if (f.isFile && f.length() > 0L) {
+                        try { f.setReadable(true, false) } catch (_: Exception) {}
                         val ext = f.extension.lowercase(Locale.US)
                         val isVideo = ext == "mp4"
                         val isPhoto = ext == "jpg" || ext == "jpeg" || ext == "png"
@@ -751,6 +752,7 @@ class GalleryActivity : AppCompatActivity() {
                         postProgressText.text = getString(R.string.post_progress_local_format, pct)
                     }
                 }
+                try { dst.setReadable(true, false) } catch (_: Exception) {}
                 saveToGallery(dst, dst.name)
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
@@ -762,7 +764,7 @@ class GalleryActivity : AppCompatActivity() {
                     displayMedia(item, initial = false)
                 }
             } catch (e: Exception) {
-                android.util.Log.w("nostrobe", "Gallery post fix failed: ${e.message}")
+                android.util.Log.w("nostrobe", "Gallery post fix failed", e)
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
                     btnProcessLocal.isEnabled = true

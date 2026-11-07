@@ -264,12 +264,14 @@ object OnDevicePost {
         try {
             r.setDataSource(srcFile.path)
             rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-            val rate = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()
-                ?: (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toDoubleOrNull()?.let { count ->
-                    val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
-                    if (durMs > 0.0) count * 1000.0 / durMs else null
-                })
-            srcFps = rate?.roundToInt()?.coerceIn(15, 240) ?: 30
+            val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
+            val count = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toDoubleOrNull() ?: 0.0
+            val measuredFps = if (durMs > 0.0 && count > 0.0) count * 1000.0 / durMs else null
+            // Never use raw CAPTURE_FRAMERATE as playback framerate because slow-mo / high-speed capture rates
+            // (e.g. 120/240 fps) will overload standard video encoders and crash with NO_MEMORY.
+            srcFps = measuredFps?.roundToInt()?.coerceIn(15, 60)
+                ?: r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()?.roundToInt()?.coerceIn(15, 60)
+                ?: 30
         } catch (_: Exception) {
         } finally {
             r.release()
@@ -326,21 +328,38 @@ object OnDevicePost {
                 if (encoder == null) {
                     val w = image.width and 1.inv()
                     val h = image.height and 1.inv()
-                    val preferHevc = isHevcEncoderAvailable(w, h)
-                    val mime = if (preferHevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
-                    val askBitrate = if (preferHevc) 18_000_000 else 24_000_000
-                    val fmt = MediaFormat.createVideoFormat(mime, w, h).apply {
-                        setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-                        setInteger(MediaFormat.KEY_BIT_RATE, askBitrate)
-                        setInteger(MediaFormat.KEY_FRAME_RATE, srcFps)
-                        setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
-                        setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                        if (android.os.Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+                    fun createEncoder(mime: String): MediaCodec {
+                        val askBitrate = if (mime == MediaFormat.MIMETYPE_VIDEO_HEVC) 18_000_000 else 24_000_000
+                        val fmt = MediaFormat.createVideoFormat(mime, w, h).apply {
+                            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+                            setInteger(MediaFormat.KEY_BIT_RATE, askBitrate)
+                            setInteger(MediaFormat.KEY_FRAME_RATE, srcFps)
+                            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+                            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                            if (android.os.Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+                        }
+                        return MediaCodec.createEncoderByType(mime).also {
+                            it.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                            it.start()
+                        }
                     }
-                    encoder = MediaCodec.createEncoderByType(mime).also {
-                        it.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                        it.start()
+
+                    val preferHevc = isHevcEncoderAvailable(w, h, srcFps)
+                    val enc = if (preferHevc) {
+                        try {
+                            createEncoder(MediaFormat.MIMETYPE_VIDEO_HEVC).also {
+                                android.util.Log.i("nostrobe", "OnDevicePost: initialized HEVC encoder for ${w}x$h @ $srcFps fps")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("nostrobe", "OnDevicePost: HEVC encoder start failed, falling back to AVC: ${e.message}")
+                            createEncoder(MediaFormat.MIMETYPE_VIDEO_AVC)
+                        }
+                    } else {
+                        createEncoder(MediaFormat.MIMETYPE_VIDEO_AVC).also {
+                            android.util.Log.i("nostrobe", "OnDevicePost: initialized AVC encoder for ${w}x$h @ $srcFps fps")
+                        }
                     }
+                    encoder = enc
                     muxer = MediaMuxer(dstFile.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also {
                         it.setOrientationHint(rotation)
                     }
@@ -494,9 +513,11 @@ object OnDevicePost {
         db.position(dPos)
     }
 
-    private fun isHevcEncoderAvailable(w: Int, h: Int): Boolean = try {
+    private fun isHevcEncoderAvailable(w: Int, h: Int, fps: Int): Boolean = try {
         val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-        val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, w, h)
+        val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, w, h).apply {
+            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+        }
         list.findEncoderForFormat(fmt) != null
     } catch (_: Throwable) {
         false

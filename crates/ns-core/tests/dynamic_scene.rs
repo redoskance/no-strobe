@@ -79,8 +79,20 @@ fn lock_rate(line_rate: f64, structure: f64, animation: f64, seeds: u64) -> (u64
     (locks, where_)
 }
 
+/// How far the flicker phase moves from one frame to the next.
+#[derive(Clone, Copy)]
+enum PhaseAdvance {
+    /// What a camera sees: the fraction of f / fps cycles. 100 Hz at 30 fps gives a third of a cycle; 120 or
+    /// 300 Hz at 30 fps (a multiple of the frame rate) gives none, and the flicker looks like the structure
+    /// of the scene in every frame.
+    Camera,
+    /// 0.3337 cycles per frame whatever the frequency: a camera clock that drifts against the light. It
+    /// gives the temporal witness something to see at every frequency, which a real camera does not.
+    Artificial,
+}
+
 /// Same scene, with a real flicker on top: the lock must still happen, on a multiple of the period.
-fn run_with_flicker(seed: u64, line_rate: f64, f_hz: f64, structure: f64, animation: f64) -> Option<f64> {
+fn run_with_flicker(seed: u64, line_rate: f64, f_hz: f64, structure: f64, animation: f64, advance: PhaseAdvance) -> Option<f64> {
     let mut rng = Rng(seed.wrapping_mul(0x9E3779B97F4A7C15) | 1);
     let mut c = PwmController::new(limits(), line_rate);
     let mut phase = 0.0;
@@ -91,7 +103,10 @@ fn run_with_flicker(seed: u64, line_rate: f64, f_hz: f64, structure: f64, animat
     };
     let mut last = c.on_profile(&mk(&mut rng, 0, 1000.0, phase));
     for t in 1..3000 {
-        phase += 0.3337;
+        phase += match advance {
+            PhaseAdvance::Camera => (f_hz / FPS).fract(),
+            PhaseAdvance::Artificial => 0.3337,
+        };
         last = c.on_profile(&mk(&mut rng, t, last.exposure_us, phase));
         if last.state == State::Locked {
             return Some(last.exposure_us);
@@ -116,22 +131,30 @@ fn no_lock_on_scenes_without_flicker() {
 
 #[test]
 fn a_real_flicker_in_a_dynamic_scene_still_locks_on_a_null() {
-    // (name, row rate, flicker, asserted). Blind at 300 Hz does not lock in an animated scene (0/8,
-    // before and after the verification of the row path): the scene motion (0.03) is as large as the
-    // flicker modulation at the long exposures of the sweep and 3 frames per probe cannot tell them
-    // apart. It is a known limit, reported here and not asserted.
+    // (name, row rate, flicker, phase advance, asserted).
+    // - Blind at 300 Hz does not lock in an animated scene (0/8, before and after the verification of the
+    //   row path): the scene motion (0.03) is as large as the flicker modulation at the long exposures of
+    //   the sweep and 3 frames per probe cannot tell them apart.
+    // - 300 Hz with the phase advance of a camera (none at 30 fps: 300 / 30 = 10 cycles) never locks over
+    //   static structure, row rate known or not: the flicker looks like the structure in every frame, and
+    //   the banding of the structure drowns the spatial witness. Review of 2026-11-07: 0/3 and 0/3 at
+    //   120 Hz. The 0.3337 advance this test used to apply to every frequency made it pass.
+    // These are known limits, reported here and not asserted.
     let rate = ROWS as f64 * FPS;
-    for (name, line_rate, f_hz, asserted) in [
-        ("blind", 0.0, 100.0, true),
-        ("blind", 0.0, 300.0, false),
-        ("row rate known", rate, 100.0, true),
-        ("row rate known", rate, 300.0, true),
+    use PhaseAdvance::{Artificial, Camera};
+    for (name, line_rate, f_hz, advance, asserted) in [
+        ("blind", 0.0, 100.0, Camera, true),
+        ("blind", 0.0, 300.0, Artificial, false),
+        ("row rate known", rate, 100.0, Camera, true),
+        ("row rate known", rate, 300.0, Artificial, true),
+        ("row rate known", rate, 300.0, Camera, false),
+        ("row rate known", rate, 120.0, Camera, false),
     ] {
         let n = 8;
         let mut good = 0;
         let mut seen = Vec::new();
         for seed in 1..=n {
-            if let Some(e) = run_with_flicker(seed, line_rate, f_hz, 97.0, 0.03) {
+            if let Some(e) = run_with_flicker(seed, line_rate, f_hz, 97.0, 0.03, advance) {
                 let t = 1e6 / f_hz;
                 let k = (e / t).round();
                 seen.push(e.round());
@@ -140,9 +163,10 @@ fn a_real_flicker_in_a_dynamic_scene_still_locks_on_a_null() {
                 }
             }
         }
-        eprintln!("{name:14} {f_hz:5.0} Hz: {good}/{n} locked on a multiple of the period {seen:?}");
+        let how = if matches!(advance, Camera) { "camera phase" } else { "phase 0.3337" };
+        eprintln!("{name:14} {f_hz:5.0} Hz, {how}: {good}/{n} locked on a multiple of the period {seen:?}");
         if asserted {
-            assert!(good * 4 >= n * 3, "{name}, {f_hz} Hz: only {good}/{n} runs locked on a multiple of the period ({seen:?})");
+            assert!(good * 4 >= n * 3, "{name}, {f_hz} Hz, {how}: only {good}/{n} runs locked on a multiple of the period ({seen:?})");
         }
     }
 }

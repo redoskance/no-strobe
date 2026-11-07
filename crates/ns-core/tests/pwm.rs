@@ -506,3 +506,83 @@ fn blind_scan_with_an_iso_floor_locks_on_a_long_multiple() {
     let k = (last.exposure_us / 10000.0).round();
     assert!(k >= 2.0 && (last.exposure_us - k * 10000.0).abs() < 600.0, "{} us is not a multiple of 10 ms", last.exposure_us);
 }
+
+/// A flicker of modulation `depth` (the full-depth synthetic profile scaled about its mean level).
+fn shallow_profile(exposure_us: f64, f_hz: f64, phase_s: f64, depth: f64, line_rate: f64) -> Vec<f64> {
+    let mean = 0.2 + 0.8 * 0.3;
+    profile_for(exposure_us, f_hz, phase_s, 0.3, line_rate, ROWS).iter().map(|p| mean + depth * (p - mean)).collect()
+}
+
+/// Blind mode, a kHz light at a shallow depth, the flicker phase moving as it does on a camera (f / fps
+/// cycles per frame, fraction only). The first hypothesis comes from the spatial period of the rows and is
+/// off by a few tenths of a percent; at k = 61 (2 kHz, 30 ms) that is 0.2 of a period, and a hill step of
+/// 0.05 / k (0.08 %) is finer than the error: the climb stalled and the lock was lost (review of 2026-11-07;
+/// a step of 2 % locked 3 of 3).
+#[test]
+fn blind_kilohertz_flicker_locks_at_shallow_depths() {
+    let mut failures = Vec::new();
+    for line_rate in [15_360.0, 20_000.0, 30_000.0, 40_000.0] {
+        for f_hz in [1000.0, 2000.0] {
+            for depth in [0.1, 0.3, 0.6] {
+                for start in [0.0, 0.21, 0.57] {
+                    let mut c = PwmController::new(phone_limits(), 0.0);
+                    let mut phase = start;
+                    let mut last = c.on_profile(&shallow_profile(1000.0, f_hz, phase, depth, line_rate));
+                    for _ in 0..1500 {
+                        phase += (f_hz / 30.0f64).fract();
+                        last = c.on_profile(&shallow_profile(last.exposure_us, f_hz, phase, depth, line_rate));
+                        if last.state == State::Locked {
+                            break;
+                        }
+                    }
+                    let t_us = 1e6 / f_hz;
+                    let k = (last.exposure_us / t_us).round();
+                    if last.state != State::Locked || k < 1.0 || (last.exposure_us - k * t_us).abs() > 0.03 * t_us {
+                        failures.push(format!(
+                            "line rate {line_rate}, {f_hz} Hz depth {depth} start {start}: {:?} at {:.0} us (k {k})",
+                            last.state, last.exposure_us
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "blind locks lost:\n{}", failures.join("\n"));
+}
+
+/// The lock of a blind sweep on a noisy sensor must not wander: `best_residual`, the banding level the
+/// lock is judged against, was the temporal modulation of the null divided by the exposure in microseconds
+/// (a unit mismatch, clamped to 0.002), so the noise alone read as a degradation and the controller
+/// re-centred again and again (each probe changes the exposure: a brightness step in the preview).
+#[test]
+fn a_noisy_blind_lock_does_not_wander() {
+    for (f_hz, amp) in [(300.0, 0.008), (500.0, 0.004), (500.0, 0.008), (1000.0, 0.004)] {
+        let mut seed = 7u64;
+        let mut c = PwmController::new(phone_limits(), 0.0);
+        let mut phase = 0.0;
+        let mut frame = |e: f64, phase: f64, seed: &mut u64| -> Vec<f64> {
+            profile_for(e, f_hz, phase, 0.3, LINE_RATE, ROWS).iter().map(|v| v + noise(seed, amp)).collect()
+        };
+        let mut last = c.on_profile(&frame(1000.0, phase, &mut seed));
+        let mut locked_at = None;
+        for i in 0..1500 {
+            phase += 0.3337;
+            last = c.on_profile(&frame(last.exposure_us, phase, &mut seed));
+            if last.state == State::Locked {
+                locked_at = Some(i);
+                break;
+            }
+        }
+        let start = locked_at.unwrap_or_else(|| panic!("{f_hz} Hz, noise {amp}: never locked"));
+        let fixed = last.exposure_us;
+        let mut moved = 0;
+        for _ in 0..600 {
+            phase += 0.3337;
+            last = c.on_profile(&frame(last.exposure_us, phase, &mut seed));
+            if last.state != State::Locked || last.exposure_us != fixed {
+                moved += 1;
+            }
+        }
+        assert_eq!(moved, 0, "{f_hz} Hz, noise {amp}: the lock (frame {start}, {fixed} us) moved on {moved} of 600 frames");
+    }
+}

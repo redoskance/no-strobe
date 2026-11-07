@@ -1085,7 +1085,9 @@ impl PwmController {
             }
             self.verified_f_hz = self.f_hz;
             self.best_exposure = self.hill_base;
-            self.best_residual = (self.verify_centre / self.hill_base).max(0.002);
+            // The level the lock is judged against: the modulation measured at the null, in the units of
+            // `residual` (relative to the mean luma), not divided by the exposure in microseconds.
+            self.best_residual = self.verify_centre.max(0.002);
             self.rechecking = false;
             self.phase = Phase::Locked;
             self.frames_since_check = 0;
@@ -1196,10 +1198,15 @@ impl PwmController {
         self.fps = fps;
         self.hill_base = e;
         self.hill_exposure = e;
-        // The probes sit +-step around k / f: at k = 16 a 2 % step is 0.3 of a period, far too coarse
-        // for the first round to land on the null (and for the verification that follows it to see one).
+        // The probes sit +-step around k / f. With the frequency read from the rows (row rate known) the
+        // hypothesis is accurate and the null narrow: at k = 16 a 2 % step is 0.3 of a period, far too
+        // coarse for the first round to land on the null (and for the verification that follows it to see
+        // one), so the step is a twentieth of a period. A blind hypothesis comes from the spatial period of
+        // the rows and is off by a few tenths of a percent: at k = 61 (2 kHz, 30 ms) that is 0.2 of a period,
+        // and a step of 0.05 / k (0.08 %) is finer than the error: the climb stalled and the lock was lost.
+        let blind = self.line_rate_hz == 0.0 || self.blind_search;
         let k = (e * self.f_hz / 1e6).round().max(1.0);
-        self.hill_step = 1.0 + (0.05 / k).min(0.02);
+        self.hill_step = if blind { 1.02 } else { 1.0 + (0.05 / k).min(0.02) };
         self.explored = false;
         self.probe = 0;
         self.probe_res = [0.0; 3];

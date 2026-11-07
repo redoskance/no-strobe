@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [main, test-for-android]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 # One run per push; an old run of the same branch is cancelled.
 concurrency:
@@ -90,6 +92,18 @@ jobs:
           files: |
             platform/android/app/build/outputs/apk/debug/app-debug.apk
             target/release/no-strobe-post
+      - name: Publish v0.2 release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.2
+          name: "v0.2: Video & Photo Modes, On-Device Post & LAN Offload"
+          body_path: RELEASE_NOTES.md
+          prerelease: false
+          draft: false
+          files: |
+            platform/android/app/build/outputs/apk/debug/app-debug.apk
+            target/release/no-strobe-post
 
   # Mockup CI for iOS App: runs selection simulation tests, generates Xcode project, and builds Simulator .app
   ios:
@@ -141,4 +155,10 @@ jobs:
           tag_name: nightly
           name: Nightly build
           prerelease: true
+          files: build/ios/AntiStrobe-Simulator.app.zip
+      - name: Publish to v0.2 Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.2
           files: build/ios/AntiStrobe-Simulator.app.zip

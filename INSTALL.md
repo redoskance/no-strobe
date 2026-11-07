@@ -17,7 +17,7 @@ C'est la méthode la plus simple et rapide. Vous n'avez pas besoin d'ordinateur,
 #### Étape 1 : Télécharger l'application
 1. Ouvrez votre navigateur sur votre téléphone (Chrome, Firefox, etc.).
 2. Rendez-vous sur la page des téléchargements officiels : [Releases GitHub](https://github.com/redoskance/no-strobe/releases).
-3. Dans la section **Assets** de la dernière version (ou de la *Nightly Release*), appuyez sur le fichier nommé **`app-debug.apk`**.
+3. Dans la section **Assets** de la dernière version (ou de la *Nightly Release*), appuyez sur le fichier nommé **`app-release.apk`** (ou `app-debug.apk`).
 4. Le téléchargement commence. Votre navigateur peut afficher un message d'avertissement du type : *"Ce type de fichier peut endommager votre appareil"*. C'est un avertissement de sécurité standard d'Android pour tout fichier téléchargé hors du Play Store. Appuyez sur **Télécharger quand même**.
 
 #### Étape 2 : Autoriser l'installation de sources inconnues
@@ -119,7 +119,7 @@ This is the easiest and fastest way. No computer is needed; everything is done d
 #### Step 1: Download the application
 1. Open your mobile browser (Chrome, Firefox, etc.).
 2. Go to the official releases page: [GitHub Releases](https://github.com/redoskance/no-strobe/releases).
-3. In the **Assets** section of the latest release (or *Nightly Release*), tap on the file named **`app-debug.apk`**.
+3. In the **Assets** section of the latest release (or *Nightly Release*), tap on the file named **`app-release.apk`** (or `app-debug.apk`).
 4. The download will start. Your browser may display a warning: *"File might be harmful"*. This is standard Android security for files downloaded outside the Play Store. Tap **Download anyway**.
 
 #### Step 2: Allow installation from unknown sources

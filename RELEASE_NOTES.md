@@ -53,6 +53,7 @@
 ---
 
 ### 📦 Artifacts & Downloads
+- `app-release.apk`: official release package signed with the project release key (RSA 4096).
 - `app-debug.apk`: debug-signed Android package for sideloading on ARM64 / ARMv7 devices.
 - `no-strobe-post`: Standalone desktop post-processing & LAN server binary (x86_64 Linux).
 - `AntiStrobe-Simulator.app.zip`: Mockup iOS simulator build.

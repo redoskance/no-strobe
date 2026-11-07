@@ -166,6 +166,9 @@ class MainActivity : AppCompatActivity() {
         lastOrientation = config.orientation
         layoutPortrait = config.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
         setContentView(R.layout.main)
+        // A camera app: the screen must not go to sleep while it is in front. A recording longer than
+        // the screen timeout (30 s on many phones) paused the activity and ended the clip.
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         surfaceView = findViewById(R.id.preview)
         val aspectLayout = findViewById<AspectFrameLayout?>(R.id.aspectLayout)
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager

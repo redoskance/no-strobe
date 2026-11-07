@@ -199,6 +199,14 @@ impl Controller {
     /// - The amplitude is never less than MIN_PULSE_AMPLITUDE, six sigmas of noise otherwise: noise alone
     ///   crosses nothing (the old threshold, mean + 0.6 sigma of the luma, was crossed by every scene).
     pub fn pulse_train(&self) -> Vec<f64> {
+        self.pulse_train_with(false)
+    }
+
+    /// `dense`: the noise level is taken as the floor amplitude instead of being estimated from the residuals. A strobe
+    /// that darkens one frame in three (10 Hz at 30 fps) fills the residuals with signal: every robust noise estimate
+    /// then reads the signal, 6 sigmas lie above any pulse and no pulse is found. Only used once a fold has shown
+    /// a periodicity far above noise.
+    fn pulse_train_with(&self, dense: bool) -> Vec<f64> {
         let lum: Vec<f64> = self.buf.frames().map(|f| f.luminance).collect();
         if lum.len() < 8 {
             return Vec::new();
@@ -220,6 +228,7 @@ impl Controller {
             }
         };
         let sigma = sigma_mad.min(sigma_diff).min(side(|r| r <= 0.0)).min(side(|r| r >= 0.0));
+        let sigma = if dense { 0.0 } else { sigma };
         let high = (PULSE_SIGMAS * sigma).max(MIN_PULSE_AMPLITUDE);
         let low = (0.5 * PULSE_SIGMAS * sigma).max(0.5 * MIN_PULSE_AMPLITUDE);
         let up = edges(&times, &resid, high, low);
@@ -268,7 +277,19 @@ impl Controller {
         // cannot resolve a strobe above fps/2.
         let max_hz = (1e6 / frame_us / 2.0 * 0.8).min(60.0);
 
-        let pulses = self.pulse_train();
+        let mut pulses = self.pulse_train();
+        if pulses.len() < MIN_PULSES {
+            // Dense strobe (see pulse_train_with): accept the floor threshold only if the luma itself folds cleanly.
+            let frames: Vec<(f64, f64)> = self.buf.frames().map(|f| (f.t_us, f.luminance)).collect();
+            let mean = frames.iter().map(|f| f.1).sum::<f64>() / frames.len().max(1) as f64;
+            let det: Vec<f64> = frames.iter().map(|f| f.1 - mean).collect();
+            if let Some((p, score)) = crate::detector::coarse_period(&det, frame_us, 1.0, max_hz.max(4.0)) {
+                let (amp, ratio, _) = fold_ratio(&frames, p);
+                if score >= 0.3 && amp >= MIN_FOLD_AMPLITUDE && ratio >= MIN_FOLD_RATIO {
+                    pulses = self.pulse_train_with(true);
+                }
+            }
+        }
 
         // A strobe is a regular train of events well above the noise: enough pulses, in phase with one
         // period (the Rayleigh statistic of their times), and a pulse in nearly every cycle. The threshold

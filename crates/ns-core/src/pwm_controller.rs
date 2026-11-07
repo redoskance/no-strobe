@@ -29,6 +29,15 @@ const HILL_FINE: f64 = 1.002;
 const NOISE_FLOOR: f64 = 0.004;
 /// A frame darker than this carries no measurable flicker (everything is noise).
 const MIN_LUMA: f64 = 0.02;
+
+/// Largest relative temporal modulation a flicker of MIN_HZ or more can produce in an exposure of
+/// `exposure_us`: its box average falls as 1 / (pi f e). A measurement above it is noise (a dark scene
+/// at ISO 1000-2000 gave 1.4-2.4 at every exposure, because the mean luma was 0.01-0.09, and a lone
+/// 0.13 where the frames were nearly black: the "null" a phone locked on), and neither the scan, nor
+/// the evidence, nor the verification may use it.
+fn plausible_modulation(exposure_us: f64) -> f64 {
+    (1.2e6 / (std::f64::consts::PI * MIN_HZ * exposure_us.max(1.0)) + 0.15).min(1.5)
+}
 /// A blind lock is believed only if the metric at the null is below this fraction of the
 /// metric 25 % away on both sides (a true null is |sin(pi e f)|-shaped: ~0 against ~0.7).
 const VERIFY_RATIO: f64 = 0.35;
@@ -533,7 +542,7 @@ impl PwmController {
         let luma = profile.iter().sum::<f64>() / profile.len().max(1) as f64;
         self.scan_frames.clear();
         self.scan_n = 0;
-        if luma >= MIN_LUMA {
+        if luma >= MIN_LUMA && m <= plausible_modulation(e) {
             self.scan_res.push((e, m));
         }
         if e < self.hill_cap() * 0.999 {
@@ -757,7 +766,9 @@ impl PwmController {
         // The metric is TEMPORAL (see `temporal_banding`): in a real scene the row-to-row structure
         // is the scene, not the flicker.
         let temporal = pwm::temporal_banding(&self.trial_profiles);
-        self.temporal_max = self.temporal_max.max(temporal);
+        if temporal <= plausible_modulation(self.hill_exposure) {
+            self.temporal_max = self.temporal_max.max(temporal);
+        }
         self.probe_res[self.probe] = if self.trial_profiles.len() >= 3 {
             // No factor of the exposure: relative modulation m|sin(pi f e)|/(pi f e) already falls
             // toward the first null at 1/f; times e it would also vanish at e -> 0 (a false null).
@@ -1042,8 +1053,10 @@ impl PwmController {
         // structure does not. In space (banding x exposure): a flicker's banding depends on the
         // exposure, a structure's does not, and this is the only one left when the flicker has the
         // same phase in every frame (a multiple of the frame rate, e.g. 120 Hz at 30 or 60 fps).
-        let deep_t = !far.is_infinite() && self.verify_centre < VERIFY_RATIO * far;
-        let deep_s = !far_s.is_infinite() && self.verify_centre_s < VERIFY_RATIO * far_s;
+        // A far probe above what a flicker can produce is noise: nothing can be concluded from it.
+        let noisy = far.is_finite() && far > plausible_modulation(far_e);
+        let deep_t = !noisy && !far.is_infinite() && self.verify_centre < VERIFY_RATIO * far;
+        let deep_s = !noisy && !far_s.is_infinite() && self.verify_centre_s < VERIFY_RATIO * far_s;
         let deep = deep_t || deep_s;
         if deep && self.verify_coarse {
             // The coarse minimum is a real null: this exposure is k / f for some k. The fine

@@ -485,7 +485,10 @@ class MainActivity : AppCompatActivity() {
             forceAutoOnly = intent.getBooleanExtra("force_auto_only", false),
             // Recording: no analysis stream (preview + recorder only). With the third stream a
             // Pixel 11 Pro Fold wrote pure noise into the clip; the lock is applied open loop.
-            dumpProfiles = intent.getBooleanExtra("dump_profiles", false),
+            dumpProfiles = intent.getBooleanExtra("dump_profiles", false).also {
+                dumpExposuresOverride = intent.getStringExtra("dump_exposures")
+                    ?.split(',')?.mapNotNull { v -> v.trim().toDoubleOrNull() }?.takeIf { l -> l.isNotEmpty() }?.toDoubleArray()
+            },
             outDir = externalCacheDir ?: cacheDir,
             highSpeedFps = if (recorder != null) hsFps else 0,
             startLevel = if (recorder != null) 2 else intent.getIntExtra("session_level", 0),

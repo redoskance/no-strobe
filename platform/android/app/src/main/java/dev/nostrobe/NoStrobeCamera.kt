@@ -42,6 +42,9 @@ const val CAMERA_FAIL_NO_RECORD = 4   // the session runs without the recorder s
  * The repeating request is reissued only when the controller moves the shutter, so the
  * new exposure takes effect on the next frame without a request per frame.
  */
+/** Debug: set by the activity from the `dump_exposures` extra before the camera is created. */
+@Volatile var dumpExposuresOverride: DoubleArray? = null
+
 class NoStrobeCamera(
     private val manager: CameraManager,
     private val cameraId: String,
@@ -978,7 +981,8 @@ class NoStrobeCamera(
     }
 
     // --- debug: row profiles at fixed exposures, to study a real light offline ---------------
-    private val dumpExposuresUs = doubleArrayOf(500.0, 1000.0, 2000.0, 4000.0, 6000.0, 8000.0, 10000.0,
+    // Debug: `--es dump_exposures 12000,12500,...` (microseconds) replaces the default grid, for a fine sweep.
+    private val dumpExposuresUs = dumpExposuresOverride ?: doubleArrayOf(500.0, 1000.0, 2000.0, 4000.0, 6000.0, 8000.0, 10000.0,
         12000.0, 15000.0, 20000.0, 25000.0, 30000.0)
     private var dumpIndex = 0
     private var dumpFrames = 0

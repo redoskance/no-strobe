@@ -146,3 +146,49 @@ fn a_real_flicker_in_a_dynamic_scene_still_locks_on_a_null() {
         }
     }
 }
+
+/// A dark scene as a phone saw it (Pixel 10 Pro XL, ISO 1000-2000): nothing but noise, whose RELATIVE
+/// size is above 100 % because the mean luma is 0.01-0.09, and the mean luma changes from one exposure
+/// to the next (clipped black frames). Measured relative temporal modulation 1.4-2.4 at every exposure,
+/// and 0.13 at one where the frames were almost black: the "null" the controller then locked on.
+fn dark_frame(rng: &mut Rng, noise: f64, exposure_us: f64) -> Vec<f64> {
+    // A pseudo-random mean level per 250 us of exposure.
+    let k = (exposure_us / 250.0).round() as u64;
+    let h = (k.wrapping_mul(0x9E3779B97F4A7C15) >> 40) as f64 / (1u64 << 24) as f64;
+    let mean = 0.012 + 0.075 * h;
+    (0..ROWS).map(|_| (mean * (1.0 + noise * rng.centred())).max(0.0)).collect()
+}
+
+fn dark_run(seed: u64, line_rate: f64, noise: f64) -> (bool, f64) {
+    let mut rng = Rng(seed.wrapping_mul(0x9E3779B97F4A7C15) | 1);
+    let mut c = PwmController::new(limits(), line_rate);
+    c.set_min_exposure(8667.0);
+    c.set_max_exposure(1e9);
+    let mut last = c.on_profile(&dark_frame(&mut rng, noise, 8667.0));
+    for _ in 1..3000 {
+        last = c.on_profile(&dark_frame(&mut rng, noise, last.exposure_us));
+        if last.state == State::Locked {
+            return (true, last.exposure_us);
+        }
+    }
+    (false, last.exposure_us)
+}
+
+#[test]
+fn no_lock_in_a_dark_scene_where_noise_exceeds_the_signal() {
+    for (name, line_rate) in [("blind", 0.0), ("row rate known", ROWS as f64 * FPS)] {
+        for noise in [1.0, 1.5, 2.0] {
+            let mut locks = Vec::new();
+            for s in 1..=16u64 {
+                let (l, e) = dark_run(s, line_rate, noise);
+                if l {
+                    locks.push(e.round());
+                }
+            }
+            if std::env::var("REPORT").is_ok() {
+                eprintln!("DARK {name:14} noise {noise:.1}: {}/16 false locks {:?}", locks.len(), locks);
+            }
+            assert!(locks.is_empty(), "{name}, noise {noise}: {}/16 false locks at {locks:?} us in a scene of pure noise", locks.len());
+        }
+    }
+}

@@ -48,6 +48,8 @@ object OnDevicePost {
             isProcessing = true
             listeners.forEach { it(true) }
         }
+        // Encode to a temp name and rename on success, so a failed run leaves no partial "-fixed.mp4".
+        val tmp = File(dst.path + ".local.part")
         try {
             val means = ArrayList<Double>()
             // Pass 1: measure luma per frame (0% - 30% progress)
@@ -57,9 +59,14 @@ object OnDevicePost {
             if (means.isEmpty()) throw PostException("no frames decoded")
             val gains = temporalGain(means.toDoubleArray(), WINDOW, MAX_GAIN)
             // Pass 2: apply gains and encode (30% - 100% progress)
-            encodeWithGains(src, dst, gains, lineRateHz) { pct ->
+            encodeWithGains(src, tmp, gains, lineRateHz) { pct ->
                 onProgress(30 + (pct * 0.7).toInt())
             }
+            dst.delete()
+            if (!tmp.renameTo(dst)) throw PostException("impossible de finaliser le clip corrigé")
+        } catch (e: Throwable) {
+            tmp.delete()
+            throw e
         } finally {
             synchronized(this) {
                 isProcessing = false

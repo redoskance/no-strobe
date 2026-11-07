@@ -299,12 +299,20 @@ class GalleryActivity : AppCompatActivity() {
                 MediaStore.Video.Media.DISPLAY_NAME,
                 MediaStore.Video.Media.DATE_ADDED
             )
+            // Only this app's folders: before Android 10 the query sees every video on the device,
+            // and the delete below removes whatever rows it returned.
+            val appMovies = getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.absolutePath
+            val folderPatterns = listOfNotNull("%/Movies/no-strobe/%", appMovies?.let { "$it/%" })
             val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
-            } else null
+            } else {
+                folderPatterns.joinToString(" OR ") { "${MediaStore.MediaColumns.DATA} LIKE ?" }
+            }
             val selectionArgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 arrayOf("%Movies/no-strobe%")
-            } else null
+            } else {
+                folderPatterns.toTypedArray()
+            }
             contentResolver.query(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 projection,
@@ -815,7 +823,14 @@ class GalleryActivity : AppCompatActivity() {
                 try {
                     FileProvider.getUriForFile(this, "$packageName.fileprovider", target)
                 } catch (_: Exception) {
-                    Uri.fromFile(target)
+                    // Outside the FileProvider roots (the internal cache): share a copy from the external cache.
+                    val dir = externalCacheDir ?: run {
+                        Toast.makeText(this, "Partage impossible", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                    val copy = File(dir, target.name)
+                    target.copyTo(copy, overwrite = true)
+                    FileProvider.getUriForFile(this, "$packageName.fileprovider", copy)
                 }
             }
             is Uri -> target

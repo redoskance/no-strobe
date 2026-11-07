@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
+import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.CamcorderProfile
@@ -36,6 +37,13 @@ import kotlin.math.min
 import kotlin.math.pow
 
 /**
+ * True when a codec in the list is an encoder that handles HEVC. Takes (isEncoder, supportedTypes)
+ * pairs so it can be unit-tested without MediaCodecInfo.
+ */
+internal fun hasHevcEncoder(codecs: List<Pair<Boolean, Array<String>>>): Boolean =
+    codecs.any { (isEncoder, types) -> isEncoder && types.any { it.equals("video/hevc", ignoreCase = true) } }
+
+/**
  * Preview, status readout, and record button. The shutter is driven by the Rust controller.
  */
 class MainActivity : AppCompatActivity() {
@@ -58,12 +66,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gridView: android.view.View
     private lateinit var countdownText: TextView
     private var micOn = true
+    // Some devices (tablets, some foldables) have no microphone: no audio, no mic toggle, no permission prompt.
+    private val hasMicrophone by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE) }
     private var layoutPortrait = true
     private var relayoutAfterRecording = false
     private var timerSecs = 0
     // The last clip recorded and the row rate it was shot with.
     private var lastClip: File? = null
     private var currentRecordingFile: File? = null
+    // True once the recorder is started: stop() throws on a recorder that is only prepared.
+    @Volatile private var recorderStarted = false
+    // The countdown before a recording runs on this handler, so a pause can cancel it.
+    private val countdownHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var resumedNow = false
+    // One restart after the camera was lost; reset when the camera delivers a status again.
+    @Volatile private var cameraRetried = false
+    // When the current camera started delivering frames: the retry guard is released only after a
+    // few healthy seconds (a camera that opens, errors and reopens would loop once a second).
+    @Volatile private var cameraHealthySince = 0L
     private var lastRowRate = 0.0
     private var recFps = 30
     private var hsFps = 0  // > 0 while recording at a high-speed rate chosen from the locked frequency
@@ -102,6 +122,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var photoButton: android.view.View
     private lateinit var shutterFlash: android.view.View
     private var isSurfaceReady = false
+    private var postProcessingListener: ((Boolean) -> Unit)? = null
 
     /**
      * Hide notification and navigation bars in camera immersive mode (transient on swipe).
@@ -150,8 +171,20 @@ class MainActivity : AppCompatActivity() {
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         if (lensOptions.isEmpty()) {
             lensOptions = LensOptions.list(manager)
+            // The lens is found again by its camera ids (a recreate relists the cameras).
+            val savedLogical = savedInstanceState?.getString("lens_logical")
+            val savedPhysical = savedInstanceState?.getString("lens_physical")
+            val savedIdx = if (savedLogical == null) -1 else
+                lensOptions.indexOfFirst { it.logicalId == savedLogical && it.physicalId == savedPhysical }
+            // Zoom and EV are clamped to the new lens by configureZoom and configureExposure.
+            if (savedIdx >= 0 && savedInstanceState != null) {
+                zoomRatio = savedInstanceState.getFloat("zoom_ratio", 1f)
+                evBias = savedInstanceState.getFloat("ev_bias", 0f)
+            }
             val wantFront = savedInstanceState?.getBoolean("selected_is_front", false) ?: false
-            lensIndex = if (wantFront) {
+            lensIndex = if (savedIdx >= 0) {
+                savedIdx
+            } else if (wantFront) {
                 val frontIdx = lensOptions.indexOfFirst { it.label.startsWith("front") }
                 if (frontIdx >= 0) frontIdx else LensOptions.defaultIndex(lensOptions)
             } else {
@@ -239,7 +272,7 @@ class MainActivity : AppCompatActivity() {
         photoButton.setOnClickListener { takeStillPhoto() }
         updateModeUI()
         shutterFlash = findViewById(R.id.shutterFlash)
-        OnDevicePost.addListener { isProcessing ->
+        val listener: (Boolean) -> Unit = { isProcessing ->
             runOnUiThread {
                 recordButton.isEnabled = !isProcessing && recorder == null
                 recordButton.alpha = if (isProcessing) 0.4f else 1.0f
@@ -250,7 +283,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        postProcessingListener = listener
+        OnDevicePost.addListener(listener)
         micButton = findViewById(R.id.mic)
+        if (!hasMicrophone) micButton.visibility = android.view.View.GONE
         gridButton = findViewById(R.id.gridToggle)
         timerButton = findViewById(R.id.timer)
         gridView = findViewById(R.id.grid)
@@ -382,6 +418,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         applyImmersiveMode()
+        resumedNow = true
+        if (relayoutAfterRecording && recorder == null) { relayoutAfterRecording = false; recreate(); return }
+        // The camera was stopped by a pause during a recording: reopen it on the preview.
+        if (camera == null && isSurfaceReady) startCamera()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -392,13 +432,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        resumedNow = false
+        countdownHandler.removeCallbacksAndMessages(null)
+        countdownText.visibility = android.view.View.GONE
+        recordButton.isEnabled = !OnDevicePost.isProcessing
         camera?.closeMeta()
-        recorder?.stop(); recorder?.release(); recorder = null
+        if (recorder != null) endRecordingNow()
         recordButton.isSelected = false
         super.onPause()
     }
 
     private fun startCamera() {
+        cameraHealthySince = 0L
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) return  // started again from onRequestPermissionsResult
@@ -408,8 +453,14 @@ class MainActivity : AppCompatActivity() {
             lensIndex = LensOptions.defaultIndex(lensOptions)
         }
         val option = lensOptions[lensIndex]
-        configureZoom(manager, option)
-        configureExposure(manager, option)
+        try {
+            configureZoom(manager, option)
+            configureExposure(manager, option)
+        } catch (e: CameraAccessException) {
+            android.util.Log.w("nostrobe", "camera characteristics unavailable: ${e.message}")
+            Toast.makeText(this, "Caméra indisponible (occupée ou désactivée).", Toast.LENGTH_LONG).show()
+            return
+        }
         val holder = surfaceView.holder
         // Note: holder.setFixedSize was configured beforehand (in onCreate or selectLens),
         // ensuring the buffer geometry matches the 16:9 preview stream and eliminates anamorphic distortion.
@@ -440,13 +491,18 @@ class MainActivity : AppCompatActivity() {
                 if (r != null) {
                     try {
                         r.start()
+                        recorderStarted = true
                     } catch (e: RuntimeException) {
                         android.util.Log.w("nostrobe", "recorder did not start: ${e.message}")
                     }
                 }
             },
+            onFailure = { code -> runOnUiThread { onCameraFailure(code) } },
         ) { cmd ->
             lastCommand = cmd
+            val nowMs = android.os.SystemClock.elapsedRealtime()
+            if (cameraHealthySince == 0L) cameraHealthySince = nowMs
+            else if (nowMs - cameraHealthySince > 5000L) cameraRetried = false
             var s = describe(cmd)
             DiagnosticReport.log("engine", s)
             // Live correction is not available: tell the user when the clip will need it.
@@ -715,6 +771,7 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.w("nostrobe", "recorder stopped without data: ${e.message}")
             }
             recorder?.release(); recorder = null
+            recorderStarted = false
             hsFps = 0
             recordButton.isSelected = false
             updateModeUI()
@@ -739,19 +796,30 @@ class MainActivity : AppCompatActivity() {
         }
         photoButton.isEnabled = false
         photoButton.alpha = 0.4f
+        // The encoder may refuse this configuration (high speed, HEVC, 1080p): once more with the
+        // one every device has, before giving up.
+        if (!startRecording(conservative = false) && !startRecording(conservative = true)) {
+            photoButton.isEnabled = !OnDevicePost.isProcessing
+            photoButton.alpha = if (OnDevicePost.isProcessing) 0.4f else 1.0f
+            Toast.makeText(this, "Impossible de démarrer l'enregistrement sur cet appareil.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Sets up the recorder and prepares it; false when the encoder refuses the configuration. */
+    private fun startRecording(conservative: Boolean): Boolean {
         // The lock in force now, with the frame rate it was found at (a dim scene runs at a lower
         // rate): the recording must use that rate, or the exposure would not fit in the frame.
         val carriedLock = camera?.carryLock() ?: Triple(0.0, 0.0, 0.0)
-        val hs = if (carriedLock.second > 0.0) pickHighSpeed(carriedLock.second) else null
+        val hs = if (!conservative && carriedLock.second > 0.0) pickHighSpeed(carriedLock.second) else null
         hsFps = hs?.first ?: 0
         // 1080p keeps the encoder and the lens stream manageable; QUALITY_HIGH can be 4K.
         val p = pickProfile()
         val r = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(this) else MediaRecorder()
         // The call order matters: the source first, then the format, then the encoders.
         // Video only for now: audio would need the RECORD_AUDIO permission.
-        val withAudio = hs == null && micOn && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+        val withAudio = hs == null && micOn && hasMicrophone && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-        if (hs == null && micOn && !withAudio) {
+        if (!conservative && hs == null && micOn && hasMicrophone && !withAudio) {
             // Ask once; this clip is recorded without sound, the next one will have it.
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 2)
             Toast.makeText(this, "Allow the microphone to record sound.", Toast.LENGTH_SHORT).show()
@@ -765,15 +833,18 @@ class MainActivity : AppCompatActivity() {
         val rate = p?.videoBitRate ?: 8_000_000
         val fps = intent.getIntExtra("rec_fps", 0).takeIf { it > 0 }
             ?: carriedLock.third.toInt().takeIf { it > 0 }
-            ?: (p?.videoFrameRate ?: 30)
-        val vw = p?.videoFrameWidth ?: 1280
-        val vh = p?.videoFrameHeight ?: 720
+            ?: (if (conservative) 30 else fpsFor(p?.videoFrameRate ?: 30))
+        // The size the chosen camera outputs to a recorder (the profile is camera 0's).
+        val rs = if (conservative) null else recorderSize(p?.let { Size(it.videoFrameWidth, it.videoFrameHeight) })
+        val vw = if (conservative) 1280 else rs?.width ?: p?.videoFrameWidth ?: 1280
+        val vh = if (conservative) 720 else rs?.height ?: p?.videoFrameHeight ?: 720
         // HEVC when the device has an encoder for it: at the same rate it keeps far less noise
         // than H.264, which matters at ISO 1750 in a dark room (the Pixel 11's H.264 encoder
         // measured ~143 Mbit/s on a noisy scene against the 30 Mbit/s asked). HEVC needs about
         // 60 % of the H.264 rate for the same quality, so the cap is lowered with it.
-        val hevc = hevcEncoder()
+        val hevc = !conservative && hevcEncoder()
         val askBps = if (hs != null) 60_000_000
+        else if (conservative) minOf(rate, 16_000_000)
         else if (hevc) minOf((rate * 0.6).toInt(), MAX_VIDEO_BITRATE) else minOf(rate, MAX_VIDEO_BITRATE)
         r.setVideoEncodingBitRate(askBps)
         android.util.Log.i("nostrobe", "recorder: profile %d bps -> asked %d bps, %s, %dx%d @ %d".format(
@@ -804,7 +875,18 @@ class MainActivity : AppCompatActivity() {
         val clipFile = File(clipsDir, "nostrobe-$timestamp.mp4")
         currentRecordingFile = clipFile
         r.setOutputFile(clipFile.path)
-        r.prepare()
+        try {
+            r.prepare()
+        } catch (e: Exception) {
+            // The encoder refused this configuration (IOException, or a RuntimeException from the codec).
+            android.util.Log.w("nostrobe", "recorder refused (conservative=$conservative): ${e.message}")
+            try { r.release() } catch (_: RuntimeException) {}
+            clipFile.delete()
+            currentRecordingFile = null
+            hsFps = 0
+            return false
+        }
+        recorderStarted = false
         recorder = r
         flipButton.isEnabled = false
         flipButton.alpha = 0.4f
@@ -825,11 +907,106 @@ class MainActivity : AppCompatActivity() {
         // The recorder surface is added by the session, so rebuild it; the recorder starts
         // once the session is configured (MediaRecorder needs frames to flow to its surface).
         camera?.stop(); startCamera()
+        return true
+    }
+
+    /** Largest 16:9 size up to 1080p that the chosen camera outputs to a MediaRecorder; null when unknown. */
+    private fun recorderSize(preferred: Size? = null): Size? {
+        val option = lensOptions.getOrNull(lensIndex) ?: return null
+        val manager = getSystemService(CAMERA_SERVICE) as CameraManager
+        val map = runCatching { manager.getCameraCharacteristics(option.logicalId) }.getOrNull()
+            ?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        val sizes = map.getOutputSizes(MediaRecorder::class.java) ?: return null
+        // The profile's own size (what clips were recorded at before) when this camera outputs it.
+        if (preferred != null && sizes.any { it.width == preferred.width && it.height == preferred.height }) return preferred
+        val fits = sizes.filter { it.height <= 1080 && it.width <= 1920 }
+        val matching = fits.filter { s -> kotlin.math.abs(s.width.toFloat() / s.height - 16f / 9f) < 0.05f }
+        return matching.ifEmpty { fits }.maxByOrNull { it.width.toLong() * it.height }
+    }
+
+    /** The profile's frame rate when an AE rate range of the chosen camera contains it. */
+    private fun fpsFor(profileFps: Int): Int {
+        val option = lensOptions.getOrNull(lensIndex) ?: return profileFps
+        val manager = getSystemService(CAMERA_SERVICE) as CameraManager
+        val ranges = runCatching { manager.getCameraCharacteristics(option.logicalId) }.getOrNull()
+            ?.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES) ?: return profileFps
+        if (ranges.any { profileFps in it.lower..it.upper }) return profileFps
+        return ranges.map { it.upper }.filter { it <= 60 }.maxOrNull() ?: profileFps
+    }
+
+    /**
+     * Ends a recording without the stop button (pause, lost camera). A recorder still in the
+     * warm-up never started: its file goes. A clip that did start is finished like the stop
+     * button does, so it is not lost. The camera is stopped: its session holds the released
+     * recorder surface, and it is started again on the preview.
+     */
+    private fun endRecordingNow() {
+        val r = recorder ?: return
+        val started = recorderStarted
+        val (total, locked) = camera?.recordingStats() ?: (0 to 0)
+        lastRowRate = camera?.rowRateHz ?: 0.0
+        camera?.closeMeta()
+        if (started) {
+            try { r.stop() } catch (e: RuntimeException) {
+                android.util.Log.w("nostrobe", "recorder stopped without data: ${e.message}")
+            }
+        }
+        try { r.release() } catch (_: RuntimeException) {}
+        recorder = null
+        recorderStarted = false
+        hsFps = 0
+        carryExposureUs = 0.0
+        carryHz = 0.0
+        camera?.stop(); camera = null
+        recordButton.isSelected = false
+        recordButton.isEnabled = !OnDevicePost.isProcessing
+        updateModeUI()
+        flipButton.isEnabled = true
+        flipButton.alpha = 1.0f
+        photoButton.isEnabled = !OnDevicePost.isProcessing
+        photoButton.alpha = if (OnDevicePost.isProcessing) 0.4f else 1.0f
+        micButton.isEnabled = true
+        micButton.alpha = 1.0f
+        timerButton.isEnabled = true
+        timerButton.alpha = 1.0f
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        if (started) { finishClip(); notifyPost(total, locked) } else currentRecordingFile?.delete()
+        currentRecordingFile = null
+    }
+
+    /**
+     * The camera failed (CAMERA_FAIL_* codes). A recording in progress is ended first; a lost
+     * camera is reopened once while the activity is resumed, otherwise the user is told.
+     */
+    private fun onCameraFailure(code: Int) {
+        cameraHealthySince = 0L
+        if (recorder != null) endRecordingNow()
+        camera?.stop(); camera = null
+        when (code) {
+            CAMERA_FAIL_LOST -> {
+                if (!cameraRetried && resumedNow) {
+                    cameraRetried = true
+                    surfaceView.postDelayed({
+                        if (camera == null && isSurfaceReady && resumedNow) startCamera()
+                    }, 1000)
+                } else {
+                    Toast.makeText(this, "Caméra déconnectée. Relancez l'application.", Toast.LENGTH_LONG).show()
+                }
+            }
+            CAMERA_FAIL_NO_RECORD -> {
+                Toast.makeText(this, "Cette caméra ne peut pas enregistrer sur cet appareil.", Toast.LENGTH_LONG).show()
+                if (resumedNow && isSurfaceReady) startCamera()  // the preview goes on
+            }
+            CAMERA_FAIL_NO_SESSION ->
+                Toast.makeText(this, "Caméra impossible à configurer sur cet appareil.", Toast.LENGTH_LONG).show()
+            else ->
+                Toast.makeText(this, "Caméra indisponible (occupée ou désactivée).", Toast.LENGTH_LONG).show()
+        }
     }
 
     /** An encoder for HEVC exists on this device (the Xperia 1 III and the Pixel 11 both do). */
-    private fun hevcEncoder(): Boolean =
-        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { it.isEncoder && it.name == "video/hevc" }
+    private fun hevcEncoder(): Boolean = hasHevcEncoder(
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.map { it.isEncoder to it.supportedTypes })
 
     /** The clip is in the cache; copy it to Movies/no-strobe so the gallery sees it. */
     private fun finishClip() {
@@ -890,7 +1067,18 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         val current = lensOptions.getOrNull(lensIndex)
         outState.putBoolean("selected_is_front", current?.label?.startsWith("front") == true)
+        current?.let {
+            outState.putString("lens_logical", it.logicalId)
+            outState.putString("lens_physical", it.physicalId)
+        }
+        outState.putFloat("zoom_ratio", zoomRatio)
+        outState.putFloat("ev_bias", evBias)
         outState.putString("capture_mode", currentMode.name)
+    }
+
+    override fun onDestroy() {
+        postProcessingListener?.let { OnDevicePost.removeListener(it) }
+        super.onDestroy()
     }
 
     private fun setCaptureMode(mode: CaptureMode) {
@@ -938,40 +1126,52 @@ class MainActivity : AppCompatActivity() {
 
     private fun savePhoto(bytes: ByteArray) {
         val appPhotosDir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "photos").apply { mkdirs() }
-        val picturesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "no-strobe").apply { mkdirs() }
         val dateStr = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
         val name = "nostrobe-shot-" + dateStr + ".jpg"
         val appFile = File(appPhotosDir, name)
-        val out = File(picturesDir, name)
+        // The app's own folder: no permission needed, and the gallery reads it.
+        var saved = false
         try {
             appFile.writeBytes(bytes)
-            out.writeBytes(bytes)
             lastClip = appFile
-            val cv = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
-                put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saved = true
+        } catch (e: Exception) {
+            android.util.Log.w("nostrobe", "failed to save photo in the app folder: ${e.message}")
+        }
+        // A copy for the system gallery. From Android 10 only MediaStore may write DCIM: a java.io
+        // write there is refused (EACCES) and used to abort this function before the toast.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            var uri: Uri? = null
+            try {
+                val cv = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                     put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "DCIM/no-strobe")
                     put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
                 }
-            }
-            val uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
-            if (uri != null) {
-                contentResolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
+                        ?: throw java.io.IOException("no output stream for the photo")
                     cv.clear()
                     cv.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
                     contentResolver.update(uri, cv, null, null)
+                    saved = true
                 }
+            } catch (e: Exception) {
+                android.util.Log.w("nostrobe", "failed to copy the photo to DCIM: ${e.message}")
+                try { uri?.let { contentResolver.delete(it, null, null) } } catch (_: Exception) {}
             }
-            runOnUiThread {
+        }
+        runOnUiThread {
+            if (saved) {
                 postButton.visibility = android.view.View.VISIBLE
                 postButton.text = "galerie"
                 val toastMsg = "📸 Photo enregistrée"
                 Toast.makeText(this, toastMsg, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Échec de l'enregistrement de la photo", Toast.LENGTH_LONG).show()
             }
-        } catch (e: Exception) {
-            android.util.Log.w("nostrobe", "failed to save photo: ${e.message}")
         }
     }
 
@@ -979,7 +1179,7 @@ class MainActivity : AppCompatActivity() {
     private fun startCountdown(seconds: Int, then: () -> Unit) {
         recordButton.isEnabled = false
         countdownText.visibility = android.view.View.VISIBLE
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val handler = countdownHandler
         var left = seconds
         val tick = object : Runnable {
             override fun run() {
@@ -1000,6 +1200,10 @@ class MainActivity : AppCompatActivity() {
     private fun prefs() = getSharedPreferences("nostrobe", MODE_PRIVATE)
 
     private fun openGallery(clip: File? = lastClip) {
+        if (recorder != null) {
+            Toast.makeText(this, "Impossible d'ouvrir la galerie pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+            return
+        }
         val intent = Intent(this, GalleryActivity::class.java).apply {
             clip?.let { putExtra("clip_path", it.absolutePath) }
             putExtra("line_rate", if (lastRowRate > 0.0) lastRowRate else (camera?.rowRateHz ?: 0.0))

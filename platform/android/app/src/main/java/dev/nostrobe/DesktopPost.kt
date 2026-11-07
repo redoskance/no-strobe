@@ -21,6 +21,8 @@ object DesktopPost {
         onProgress: (Int) -> Unit,
     ) {
         val root = base.trim().trimEnd('/').let { if (it.contains("://")) it else "http://$it" }
+        // Download to a temp name (distinct from the local post's) and rename on success.
+        val tmp = File(out.path + ".lan.part")
         val conn = URL("$root/fix?line_rate=${"%.0f".format(java.util.Locale.US, lineRateHz)}")
             .openConnection() as HttpURLConnection
         try {
@@ -53,7 +55,7 @@ object DesktopPost {
             }
             val size = conn.contentLengthLong.coerceAtLeast(1)
             conn.inputStream.use { input ->
-                out.outputStream().use { o ->
+                tmp.outputStream().use { o ->
                     val buf = ByteArray(1 shl 16)
                     var got = 0L
                     while (true) {
@@ -65,6 +67,11 @@ object DesktopPost {
                     }
                 }
             }
+            out.delete()
+            if (!tmp.renameTo(out)) throw PostException("impossible de finaliser le clip corrigé")
+        } catch (e: Throwable) {
+            tmp.delete()
+            throw e
         } finally {
             conn.disconnect()
         }

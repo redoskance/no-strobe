@@ -1,6 +1,7 @@
 package dev.nostrobe
 
 import android.graphics.ImageFormat
+import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraConstrainedHighSpeedCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -26,6 +27,12 @@ import java.util.Locale
 import android.util.Size
 import android.view.Surface
 import kotlin.math.abs
+
+/** Why the camera failed (the onFailure callback of NoStrobeCamera). */
+const val CAMERA_FAIL_OPEN = 1        // could not be opened (busy, disabled, unsupported)
+const val CAMERA_FAIL_LOST = 2        // disconnected, or a device error while running
+const val CAMERA_FAIL_NO_SESSION = 3  // the session could not be configured at all
+const val CAMERA_FAIL_NO_RECORD = 4   // the session runs without the recorder surface
 
 /**
  * Camera2 pipeline: preview + YUV analysis + recording, with the shutter driven by the
@@ -65,9 +72,11 @@ class NoStrobeCamera(
     private val seedHz: Double = 0.0,
     /** Recording without a lock: stay on auto-exposure, probing exposures would ruin the clip. */
     private val holdAutoNoSeed: Boolean = false,
+    /** The camera failed or cannot record here: one of the CAMERA_FAIL_* codes. */
+    private val onFailure: (Int) -> Unit = {},
     private val onStatus: (NsCommand) -> Unit,
 ) {
-    private var device: CameraDevice? = null
+    @Volatile private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
     private var strobe: SyncController? = null
@@ -104,6 +113,7 @@ class NoStrobeCamera(
     private var lastAfState: Int? = null
     private var lastFocusDiopters = -1f
     @Volatile private var stopped = false
+    @Volatile private var reportedLoss = false
     // The device cannot (or does not) do manual exposure: the camera stays on auto-exposure
     // and the app only records; the clip is fixed afterwards.
     private var autoOnly = false
@@ -308,7 +318,31 @@ class NoStrobeCamera(
     // The caller (MainActivity.startCamera) checks the CAMERA permission before it gets here.
     @android.annotation.SuppressLint("MissingPermission")
     fun start() {
+        try {
+            openPipeline()
+        } catch (e: CameraAccessException) {
+            // Busy, disabled or gone: nothing is left running, the caller says so.
+            Log.w(TAG, "camera $cameraId not opened: ${e.message}")
+            stop()
+            onFailure(CAMERA_FAIL_OPEN)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "camera $cameraId not opened: ${e.message}")
+            stop()
+            onFailure(CAMERA_FAIL_OPEN)
+        }
+    }
+
+    /** The camera was lost while running: reported once, not while stopping. */
+    private fun reportLost() {
+        if (stopped || reportedLoss) return
+        reportedLoss = true
+        onFailure(CAMERA_FAIL_LOST)
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun openPipeline() {
         stopped = false
+        reportedLoss = false
         Log.i(TAG, "controller: ${if (pwmMode) "pwm (100 Hz - 5 kHz, row profile)" else "strobe (slow flashes, frame luma)"}")
         // A 32-bit process on a 64-bit capable device (measured on a Xperia 1 III ROM): the
         // framework aborts the whole process inside ImageReader's Image.getPlanes(), which
@@ -424,22 +458,31 @@ class NoStrobeCamera(
                     return
                 }
                 device = d
+                // stop() may have run since the check above, and found no device to close.
+                if (stopped) { d.close(); device = null; return }
                 try {
                     createSession(d, surfaces, startLevel)
                 } catch (e: IllegalArgumentException) {
                     Log.w(TAG, "session not created: ${e.message}")
                     d.close(); device = null
+                } catch (e: CameraAccessException) {
+                    Log.w(TAG, "session not created: ${e.message}")
+                    d.close(); device = null
+                    if (!stopped) onFailure(CAMERA_FAIL_OPEN)
                 }
             }
 
             override fun onDisconnected(d: CameraDevice) {
                 d.close()
                 device = null
+                reportLost()
             }
 
             override fun onError(d: CameraDevice, e: Int) {
                 d.close()
                 device = null
+                Log.w(TAG, "camera $cameraId error $e")
+                reportLost()
             }
         }, null)
     }
@@ -450,7 +493,7 @@ class NoStrobeCamera(
      * post-processed, so the less the ISP smears it the better.
      */
     private fun applyQuality(b: CaptureRequest.Builder) {
-        val chars = manager.getCameraCharacteristics(cameraId)
+        val chars = runCatching { manager.getCameraCharacteristics(cameraId) }.getOrNull() ?: return
         fun hq(avail: CameraCharacteristics.Key<IntArray>, want: Int, key: CaptureRequest.Key<Int>) {
             if (chars.get(avail)?.contains(want) == true) b.set(key, want)
         }
@@ -469,7 +512,7 @@ class NoStrobeCamera(
     private fun applyBias(b: CaptureRequest.Builder) {
         // Only used while the camera's auto-exposure runs (before probing, and in the rest
         // periods). In manual exposure the bias scales the ISO budget instead.
-        val chars = manager.getCameraCharacteristics(cameraId)
+        val chars = runCatching { manager.getCameraCharacteristics(cameraId) }.getOrNull() ?: return
         val step = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)?.toFloat() ?: return
         val range = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE) ?: return
         if (step <= 0f) return
@@ -503,7 +546,7 @@ class NoStrobeCamera(
     fun focusAt(nx: Float, ny: Float) {
         val b = builder ?: return
         val sess = session ?: return
-        val chars = manager.getCameraCharacteristics(cameraId)
+        val chars = runCatching { manager.getCameraCharacteristics(cameraId) }.getOrNull() ?: return
         val active = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return
         val orientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
         val front = chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
@@ -733,6 +776,11 @@ class NoStrobeCamera(
                 }
                 if (recorder == null) {
                     if (level < 3) onReady()
+                } else if (level >= 3) {
+                    // Preview only: the recorder surface is not in this session, nothing can be recorded.
+                    Log.w(TAG, "preview-only session with a recorder: cannot record on this camera")
+                    onStatus(unsupportedStatus())
+                    onFailure(CAMERA_FAIL_NO_RECORD)
                 } else {
                     handler?.postDelayed({ triggerRecorderStart() }, 1500L)
                 }
@@ -744,6 +792,9 @@ class NoStrobeCamera(
                     try { createSession(d, all, level + 1) } catch (e: Exception) {
                         Log.w(TAG, "fallback session failed: ${e.message}")
                     }
+                } else if (level >= 3 && !stopped) {
+                    onStatus(unsupportedStatus())
+                    onFailure(if (recorder != null) CAMERA_FAIL_NO_RECORD else CAMERA_FAIL_NO_SESSION)
                 }
             }
         }
@@ -1058,6 +1109,12 @@ class NoStrobeCamera(
             }
         } catch (e: IllegalStateException) {
             Log.w(TAG, "frame dropped: ${e.message}")
+        } catch (e: CameraAccessException) {
+            Log.w(TAG, "camera lost while analysing: ${e.message}")
+            reportLost()
+        } catch (e: Exception) {
+            // Nothing may escape the ImageReader thread: an uncaught exception kills the process.
+            Log.w(TAG, "frame dropped: ${e.javaClass.simpleName} ${e.message}")
         } finally {
             image.close()
         }

@@ -170,22 +170,22 @@ pub fn fold_ratio(frames: &[(f64, f64)], period_us: f64) -> (f64, f64, f64) {
     (best.0, best.0 / (sd * (2.0 / n as f64).sqrt()), best.1)
 }
 
-/// How well the pulse times follow the fitted train, as (completeness, matched, cycles):
+/// How well the pulse times follow the fitted train, as (completeness, one_each, cycles):
 /// - `cycles`: the number of distinct cycles of the train that hold a pulse;
 /// - `completeness`: those cycles over the cycles between the first and the last of them (1 when no cycle
 ///   is missing). A strobe lights nearly every cycle; a scene whose lights blink now and then does not;
-/// - `matched`: the share of the pulses within a third of a period of the train (the times are quantised
-///   to the frame clock, a fifth of a period at the fastest).
+/// - `one_each`: those cycles over ALL the pulses. A pulse off the train (more than a third of a period from
+///   it; the times are quantised to the frame clock, a fifth of a period at the fastest) lowers it, and so
+///   does a second pulse in the same cycle: a light that blinks in short bursts, repeated every second or so,
+///   fits a period as long as the bursts are far apart, with several pulses in each cycle. A strobe has one.
 pub fn train_regularity(pulses: &[f64], est: &Estimate) -> (f64, f64, usize) {
     if pulses.is_empty() || est.period_us <= 0.0 {
         return (0.0, 0.0, 0);
     }
     let mut cycles: Vec<i64> = Vec::new();
-    let mut matched = 0usize;
     for &t in pulses {
         let m = ((t - est.phase_us) / est.period_us).round();
         if (t - (est.phase_us + m * est.period_us)).abs() <= est.period_us / 3.0 {
-            matched += 1;
             cycles.push(m as i64);
         }
     }
@@ -194,30 +194,11 @@ pub fn train_regularity(pulses: &[f64], est: &Estimate) -> (f64, f64, usize) {
     match (cycles.first(), cycles.last()) {
         (Some(first), Some(last)) => (
             cycles.len() as f64 / (last - first + 1) as f64,
-            matched as f64 / pulses.len() as f64,
+            cycles.len() as f64 / pulses.len() as f64,
             cycles.len(),
         ),
         _ => (0.0, 0.0, 0),
     }
-}
-
-/// Times of rising edges: the first frame of each run above `threshold`.
-///
-/// A square wave whose bright part spans several frames puts every one of them
-/// above the threshold, so plain pulse detection yields several pulses per
-/// cycle and the integer cycle counts collapse. The rising edge is one per
-/// cycle and is what the phase fit needs.
-pub fn rising_edges(luma: &[f64], threshold: f64, frame_us: f64) -> Vec<f64> {
-    let mut out = Vec::new();
-    let mut above = false;
-    for (i, v) in luma.iter().enumerate() {
-        let now = *v > threshold;
-        if now && !above {
-            out.push(i as f64 * frame_us);
-        }
-        above = now;
-    }
-    out
 }
 
 /// Least-squares fit of flash times to `phase + m * period`, where m is an integer cycle

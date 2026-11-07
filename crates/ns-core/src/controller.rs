@@ -189,7 +189,7 @@ impl Controller {
     }
 
     /// The command of the search: the highest frame rate, and an exposure of most of the frame the camera
-    /// ACTUALLY delivers. A phone asked for 60 fps often runs at 30 (a Pixel 10 Pro XL in a dim room): an
+    /// ACTUALLY delivers. A phone asked for 60 fps often runs at 30 (in a dim room): an
     /// exposure sized for 60 covered 45 % of each 30 fps frame, and a flash fell in the gap more than
     /// half of the time.
     fn search_command(&mut self) -> Command {
@@ -219,7 +219,7 @@ impl Controller {
         // period (the Rayleigh statistic of their times), and a pulse in nearly every cycle. The threshold
         // used to be mean + 0.6 sigma of the luma, which noise crosses in every scene, and the
         // autocorrelation guess locked on it: 100 % of the simulated scenes without a strobe locked, and so
-        // did a Pixel 10 Pro XL in a dark room (a lock of 9998 us carried to the recording). The Rayleigh
+        // did a phone in a dark room (a lock of 9998 us carried to the recording). The Rayleigh
         // statistic alone is not enough either: four pulses of a light that blinks now and then line up on
         // some period of the scan about once in three tries, and a real scene did (a 9.7 Hz lock on pulses
         // that came in 1 cycle of 3). Without a coherent AND complete train there is no lock.
@@ -257,7 +257,9 @@ impl Controller {
     /// exposure that can be planned for its period.
     fn is_a_strobe(&self, pulses: &[f64], est: &Estimate) -> bool {
         let (completeness, matched, cycles) = train_regularity(pulses, est);
-        cycles >= MIN_PULSES
+        let span = pulses.last().copied().unwrap_or(0.0) - pulses.first().copied().unwrap_or(0.0);
+        cycles >= MIN_TRAIN_CYCLES
+            && span >= MIN_TRAIN_SPAN_US
             && completeness >= MIN_TRAIN_COMPLETENESS
             && matched >= MIN_TRAIN_MATCHED
             && !solve(est, &self.limits).is_empty()
@@ -440,12 +442,18 @@ const MIN_PULSES: usize = 4;
 /// pulse of the train, that hold a pulse. Measured at the moment of the lock: 1.0 for every simulated strobe
 /// but one (0.67), 0.33 for the irregular pulses of a real scene.
 const MIN_TRAIN_COMPLETENESS: f64 = 0.6;
-/// Share of the pulses that fall on the fitted train.
+/// Cycles with a pulse over all the pulses: nearly every pulse is the only one of its cycle, on the train.
 const MIN_TRAIN_MATCHED: f64 = 0.8;
+/// A train must be going on for a while: at least this many cycles with a pulse, over at least this long. A
+/// light that blinks four times at 10 Hz and stops (an indicator LED during a transfer) is a perfect train of
+/// four pulses over 0.3 s, and used to lock; a strobe lasts for seconds at least. (The span, not a larger
+/// number of cycles: a 1 Hz strobe only has four pulses in the 4 s buffer of a 60 fps camera.)
+const MIN_TRAIN_CYCLES: usize = 4;
+const MIN_TRAIN_SPAN_US: f64 = 1.0e6;
 
 /// Search with an exposure of most of a frame: a flash lands in some frame's window almost always, whatever
 /// the strobe rate. With 8 ms of a 33 ms frame a 10 Hz strobe (exactly 3 frames per period, so the phase never
-/// moves) whose flash fell in the 25 ms gap was never seen: measured on a Pixel 10 Pro XL running at 30 fps in a
+/// moves) whose flash fell in the 25 ms gap was never seen: measured on a phone running at 30 fps in a
 /// dark room. The pulse is a smaller part of a longer exposure, but the light it adds is the same.
 fn search_exposure(limits: &CameraLimits, frame_us: f64) -> f64 {
     let target = (SEARCH_FRAME_FRACTION * frame_us).max(SEARCH_EXPOSURE_US);

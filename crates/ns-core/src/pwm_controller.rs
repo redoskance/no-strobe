@@ -136,6 +136,20 @@ pub struct PwmController {
     /// The lock in force was verified blind (temporal null): the row rate learned afterwards must
     /// not send it through the row path's recalibration, which re-measures f from short exposures.
     blind_lock: bool,
+    /// The blind sweep is running (started by `start_blind_sweep`): every verification of the blind path
+    /// applies even though the row rate is known, because the rows were what misled the search.
+    blind_search: bool,
+    /// The coarse exploratory climb has been tried on the current row hypothesis (a wrong harmonic
+    /// is found by climbing with a 2 % step, which a first round tuned for a right one cannot do).
+    explored: bool,
+    /// Last frequency that passed the temporal verification (0 = none yet). A frequency read from the
+    /// profile rows is only a hypothesis until then: see `needs_row_verify`.
+    verified_f_hz: f64,
+    /// Spatial banding (amplitude x exposure) of the three probes of the last round, and of the far
+    /// probes of the verification: the second witness when the phase never moves between frames.
+    probe_res_s: [f64; 3],
+    verify_centre_s: f64,
+    verify_hi_ms: f64,
     /// Software PLL for phase tracking and Camera2 pipeline latency compensation.
     pll: Option<crate::pll::FlickerPll>,
     /// Hardware camera pipeline depth in frames (CameraCharacteristics.REQUEST_PIPELINE_MAX_DEPTH).
@@ -198,6 +212,12 @@ impl PwmController {
             f_est_hz: 0.0,
             settle_frames: 0,
             blind_lock: false,
+            blind_search: false,
+            explored: false,
+            verified_f_hz: 0.0,
+            probe_res_s: [0.0; 3],
+            verify_centre_s: 0.0,
+            verify_hi_ms: 0.0,
             pll: None,
             pipeline_depth: 2.0,
             total_frames: 0,
@@ -477,6 +497,7 @@ impl PwmController {
         self.f_hz = 0.0;
         self.confidence = 0.0;
         self.flicker_seen = false;
+        self.blind_search = true;
         self.trial_profiles.clear();
         self.scan_window = None;
         self.f_est_hz = 0.0;
@@ -635,13 +656,10 @@ impl PwmController {
                     self.pll = Some(pll);
 
                     if let Some(e) = self.begin_hill() {
-                        if conf >= 0.5 {
-                            self.best_exposure = e;
-                            self.best_residual = 0.02;
-                            self.phase = Phase::Locked;
-                            self.frames_since_check = 0;
-                            return self.emit(e, State::Locked, self.confidence);
-                        }
+                        // A spatial estimate is a hypothesis, not a lock: static periodic structure
+                        // (keys, text lines, truss) reads as banding, and with a known row rate this
+                        // used to lock at once (40 of 40 scenes without any flicker). The hill climb
+                        // runs one round at k / f, then `verify` checks the null in time.
                         return self.emit(e, State::Search, self.confidence);
                     }
                 }
@@ -747,6 +765,7 @@ impl PwmController {
         } else {
             self.trial_acc / self.trial_n.max(1) as f64
         };
+        self.probe_res_s[self.probe] = self.trial_acc / self.trial_n.max(1) as f64;
         self.trial_profiles.clear();
         self.trial_acc = 0.0;
         self.trial_n = 0;
@@ -827,7 +846,7 @@ impl PwmController {
             self.phase = Phase::Search;
             return self.emit(self.min_exp(), State::Search, 0.0);
         }
-        if self.line_rate_hz == 0.0 && self.hill_step < SWEEP_COARSE && self.f_hz == 0.0 {
+        if (self.line_rate_hz == 0.0 || self.blind_search) && self.hill_step < SWEEP_COARSE && self.f_hz == 0.0 {
             // Local banding minimum, but a coarse one (steps of ~5 %) can be a dip of the noise or
             // of the envelope: measured on a real 100 Hz lamp the climb fixed f = 1082 Hz on a
             // shallow dip near 0.9 ms and then refined around nothing. Check 25 % above and below
@@ -835,7 +854,14 @@ impl PwmController {
             self.verify_coarse = true;
             return self.begin_verify();
         }
-        if self.hill_step < HILL_FINE && self.line_rate_hz == 0.0 && !self.rechecking {
+        if self.hill_step < HILL_FINE && (self.line_rate_hz == 0.0 || self.blind_search) && !self.rechecking {
+            return self.begin_verify();
+        }
+        // Converged: the multiplicative step reached its floor, or the probes are within 6 % of a period
+        // (a 0.3 % step at k = 16 is 5 % of a period: precise enough, and the climb need not go on).
+        let k_now = (self.hill_base * self.f_hz / 1e6).round().max(1.0);
+        let fine_enough = self.hill_step < HILL_FINE || (self.hill_step - 1.0) * k_now < 0.06;
+        if !self.rechecking && fine_enough && self.needs_row_verify() {
             return self.begin_verify();
         }
         if self.hill_step < HILL_FINE {
@@ -899,6 +925,7 @@ impl PwmController {
             // The flicker changed (or stopped): search again from scratch.
             if residual > 0.05 {
                 self.blind_lock = false;
+                self.blind_search = false;
                 self.profiles.clear();
                 self.f_hz = 0.0;
                 self.confidence = 0.0;
@@ -932,6 +959,7 @@ impl PwmController {
     /// and below. Noise gives a "minimum" that is no lower than its surroundings.
     fn begin_verify(&mut self) -> crate::controller::Command {
         self.verify_centre = self.probe_res.iter().cloned().fold(f64::INFINITY, f64::min);
+        self.verify_centre_s = self.probe_res_s.iter().cloned().fold(f64::INFINITY, f64::min);
         // Probe half a period away: k*f + T/2 is a half-integer multiple of the period, so its
         // banding is at maximum. A +-25 % probe can land on another null (0.25*k*f is a multiple
         // of T when k is a multiple of 4), and then the deep test compares two nulls and says
@@ -971,28 +999,52 @@ impl PwmController {
         } else {
             self.trial_acc / self.trial_n.max(1) as f64
         };
+        let ms = self.trial_acc / self.trial_n.max(1) as f64;
         self.trial_profiles.clear();
         self.trial_acc = 0.0;
         self.trial_n = 0;
         if self.verify_stage == 0 {
             self.verify_hi_m = m;
+            self.verify_hi_ms = ms;
             self.verify_stage = 1;
             return self.emit(self.verify_lo_e, State::Search, self.confidence);
         }
-        // Far probes that really moved (a clamped probe equals the centre and says nothing).
+        // Far probes that really moved (a clamped probe equals the centre and says nothing): by 10 %
+        // of the exposure, or by 40 % of a period when that is less (a 500 Hz light at a 16 ms
+        // exposure: half a period is 6 % of the exposure and is the contrast that matters).
+        let min_move = if self.f_hz > 0.0 {
+            (0.4e6 / self.f_hz).min(0.1 * self.hill_base)
+        } else {
+            0.1 * self.hill_base
+        };
+        let hi_moved = (self.verify_hi_e - self.hill_base).abs() > min_move;
+        let lo_moved = (self.verify_lo_e - self.hill_base).abs() > min_move;
         let mut far = f64::INFINITY;
         let mut far_e = self.hill_base;
-        if (self.verify_hi_e / self.hill_base - 1.0).abs() > 0.1 && self.verify_hi_m < far {
+        let mut far_s = f64::INFINITY;
+        if hi_moved && self.verify_hi_m < far {
             far = self.verify_hi_m;
             far_e = self.verify_hi_e;
         }
-        if (self.verify_lo_e / self.hill_base - 1.0).abs() > 0.1 && m < far {
+        if lo_moved && m < far {
             far = m;
             far_e = self.verify_lo_e;
         }
+        if hi_moved && self.verify_hi_ms < far_s {
+            far_s = self.verify_hi_ms;
+        }
+        if lo_moved && ms < far_s {
+            far_s = ms;
+        }
         // No far probe that really moved (both clamped by the range) proves nothing: a null needs a
         // measured contrast with its surroundings. (It used to pass vacuously.)
-        let deep = !far.is_infinite() && self.verify_centre < VERIFY_RATIO * far;
+        // Two witnesses. In time (std of each row over the frames): flicker moves from frame to frame,
+        // structure does not. In space (banding x exposure): a flicker's banding depends on the
+        // exposure, a structure's does not, and this is the only one left when the flicker has the
+        // same phase in every frame (a multiple of the frame rate, e.g. 120 Hz at 30 or 60 fps).
+        let deep_t = !far.is_infinite() && self.verify_centre < VERIFY_RATIO * far;
+        let deep_s = !far_s.is_infinite() && self.verify_centre_s < VERIFY_RATIO * far_s;
+        let deep = deep_t || deep_s;
         if deep && self.verify_coarse {
             // The coarse minimum is a real null: this exposure is k / f for some k. The fine
             // climb continues from here, so k is not assumed to be 1.
@@ -1013,6 +1065,12 @@ impl PwmController {
             return self.emit(self.hill_exposure, State::Search, self.confidence);
         }
         if deep {
+            if self.blind_search {
+                // Found by the blind sweep: from now on it is a blind lock, whatever the row rate.
+                self.blind_search = false;
+                self.blind_lock = true;
+            }
+            self.verified_f_hz = self.f_hz;
             self.best_exposure = self.hill_base;
             self.best_residual = (self.verify_centre / self.hill_base).max(0.002);
             self.rechecking = false;
@@ -1026,6 +1084,31 @@ impl PwmController {
         if self.scan_window.is_some() {
             self.verify_coarse = false;
             return self.next_scan_candidate();
+        }
+        if self.line_rate_hz > 0.0 && !self.blind_search {
+            if !self.explored {
+                // The hypothesis may be a wrong harmonic of a real flicker: climb once with the coarse
+                // step (what the first round, tuned for a right hypothesis, cannot do), then verify again.
+                self.explored = true;
+                self.verify_coarse = false;
+                self.hill_step = 1.02;
+                self.probe = 0;
+                self.probe_res = [0.0; 3];
+                self.frames_since_check = 0;
+                self.trial_acc = 0.0;
+                self.trial_n = 0;
+                self.trial_profiles.clear();
+                self.phase = Phase::Hill;
+                self.hill_exposure = self.hill_base;
+                return self.emit(self.hill_exposure, State::Search, self.confidence);
+            }
+            // Twice refused: the periodicity was scene structure. The blind sweep does not trust the
+            // rows (0 false locks of 40 on such scenes) and finds a real flicker if there is one.
+            self.explored = false;
+            self.verify_coarse = false;
+            self.f_from_rows = false;
+            self.pll = None;
+            return self.start_blind_sweep();
         }
         // Not a null: forget this frequency and keep climbing from the lower far probe.
         self.verify_coarse = false;
@@ -1068,6 +1151,14 @@ impl PwmController {
 
     /// Start a hill climb at the largest `k / f` that fits the frame period.
     /// The largest `k` keeps the most light; the climb corrects the estimate.
+    /// A frequency taken from the rows (spatial) must be confirmed by the temporal metric before it
+    /// becomes a lock, unless it is the one already confirmed (a recalibration of the same flicker).
+    fn needs_row_verify(&self) -> bool {
+        self.line_rate_hz > 0.0
+            && self.f_hz > 0.0
+            && !(self.verified_f_hz > 0.0 && (self.f_hz / self.verified_f_hz - 1.0).abs() < 0.03)
+    }
+
     fn begin_hill(&mut self) -> Option<f64> {
         let mut chosen = None;
         for fps in self.limits.supported_fps.iter().rev() {
@@ -1092,7 +1183,11 @@ impl PwmController {
         self.fps = fps;
         self.hill_base = e;
         self.hill_exposure = e;
-        self.hill_step = 1.02;
+        // The probes sit +-step around k / f: at k = 16 a 2 % step is 0.3 of a period, far too coarse
+        // for the first round to land on the null (and for the verification that follows it to see one).
+        let k = (e * self.f_hz / 1e6).round().max(1.0);
+        self.hill_step = 1.0 + (0.05 / k).min(0.02);
+        self.explored = false;
         self.probe = 0;
         self.probe_res = [0.0; 3];
         self.frames_since_check = 0;

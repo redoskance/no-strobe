@@ -20,6 +20,7 @@ Un outil de post-traitement sur ordinateur permet également de corriger les vid
 Le contexte des strobes lents (lampes de police) et les applis qui s'y rapportent sont décrits dans [STROBE-POLICE.md](STROBE-POLICE.md).
 
 Pour installer l'application sur votre smartphone sans passer par les stores, consultez le [Guide d'installation pas à pas](INSTALL.md).
+Pour la liste des prérequis matériels et des modèles testés, consultez [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ---
 
@@ -176,6 +177,7 @@ A desktop post-processing tool fixes clips recorded without sync (see *Post-proc
 The context of slow strobes (police torches) and the related apps are described in [STROBE-POLICE.md](STROBE-POLICE.md).
 
 For direct APK installation on your smartphone, see the step-by-step [Installation Guide](INSTALL.md).
+For theoretical hardware requirements and verified devices, see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ---
 

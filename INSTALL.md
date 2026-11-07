@@ -8,6 +8,9 @@
 
 Bienvenue sur **No Strobe** ! Ce guide vous explique pas à pas comment installer l'application sur votre téléphone, même si vous n'avez jamais installé d'application en dehors du Google Play Store ou de l'App Store.
 
+> [!TIP]
+> Consultez [COMPATIBILITY.md](COMPATIBILITY.md) pour vérifier la compatibilité théorique de votre smartphone et les appareils testés.
+
 ---
 
 ### Méthode 1 : Téléchargement direct de l'APK (Recommandé pour Android)
@@ -109,6 +112,9 @@ Il n'existe pas encore de build iOS installable de No Strobe. Le dépôt contien
 ## 🇬🇧 Installation Guide (English)
 
 Welcome to **No Strobe**! This step-by-step guide walks you through installing the application on your mobile device, even if you have never installed an app outside the Google Play Store or Apple App Store before.
+
+> [!TIP]
+> See [COMPATIBILITY.md](COMPATIBILITY.md) for theoretical hardware requirements and the list of verified devices.
 
 ---
 

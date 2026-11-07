@@ -1,8 +1,20 @@
-# Release v0.3: Strobe Mode, Burst Photos & Recording Reliability
+# Release v0.3.1: Controller Optimizations, Security & Device Compatibility
 
-## 🇫🇷 Nouveautés de la version 0.3
+## 🇫🇷 Nouveautés de la version 0.3.1
 
-### 📱 Fonctionnalités Mobile
+### 🚀 Correctifs et optimisations (v0.3.1)
+- **Optimisations moteur & contrôleur (`ns-core`)** :
+  - **Médian glissant incrémental** en $\mathcal{O}(n \cdot w)$ dans `local_residual` (recherche binaire avec insertion/suppression ordonnée) réduisant drastiquement le coût CPU par trame.
+  - **Désambiguïsation d'octave** à 17 Hz (rapport cyclique de 70 %) par comparaison de repliement harmonique de la luma à $P$ et $P/2$ (recherche élargie à $\pm 8\%$).
+  - **Plan de solveur pour strobes lents (< 1,5 Hz)** : adaptation du mode `Gap` pour plafonner l'exposition à la durée d'une image complète (`frame_us - sustain_us`), débloquant le verrouillage à basse fréquence.
+- **Sécurité réseau Android** :
+  - `network_security_config.xml` interdisant tout trafic HTTP en clair sur le réseau public, restreint au réseau local (`localhost`, `.local`, `.lan`, `home.arpa`) pour le déport LAN.
+- **Internationalisation (i18n)** :
+  - Extraction et traduction intégrale de toutes les chaînes d'interface en français et en anglais (`strings.xml` et `values-fr/strings.xml`).
+- **Documentation technique** :
+  - Ajout de `COMPATIBILITY.md` recensant les exigences Camera2 théoriques et la liste des appareils physiques/virtuels vérifiés.
+
+### 📱 Fonctionnalités Mobile (base v0.3)
 - **Sélecteur de mode VIDEO | PHOTO | STROBE** : le mode STROBE enregistre avec la recherche lente de strobe. Passer vers ou depuis STROBE redémarre la caméra ; le mode choisi est mémorisé.
 - **Photos en rafale** : une photo est une rafale de 6 trames à exposition et ISO fixes. La trame qu'aucune impulsion de strobe n'a frappée est conservée (comparaison sur la luminance brute).
 - **Recherche de strobe lent** : de 1 Hz à 0,4 × fps (12 Hz à 30 images/s). La période est déduite des instants des impulsions, avec une exposition de recherche qui couvre presque toute l'image *telle que la caméra la livre*. Un verrouillage demande un train régulier (une impulsion dans presque chaque cycle) : une lumière qui clignote par moments ne verrouille plus. Le verrouillage est revérifié toutes les 20 s et abandonné si le strobe s'est arrêté. Un strobe dont la période n'admet aucune exposition réalisable (moins de 1,5 Hz sur certains téléphones) faisait planter l'application par récursion infinie : corrigé.
@@ -13,14 +25,6 @@
 - **Enregistrement plus robuste** : une boîte de dialogue système (autorisation du micro, volet de notifications) ne termine plus l'enregistrement ; une caméra perdue est rouverte une fois ; un clip commencé est sauvegardé proprement.
 - **Galerie** : les photos s'ouvrent dans une visionneuse, orientées selon leurs métadonnées EXIF.
 - **Stockage** : sur Android 10 et plus, la copie dans DCIM passe par MediaStore et signale son résultat.
-- **Optimisations moteur & contrôleur (v0.3)** :
-  - Médian glissant incrémental en $\mathcal{O}(n \cdot w)$ dans `local_residual` pour un coût CPU réduit par image.
-  - Désambiguïsation d'octave à 17 Hz (rapport cyclique de 70 %) par comparaison du repli de la luma à $P$ et $P/2$.
-  - Plan de solveur pour strobes lents (< 1,5 Hz) avec exposition pleine trame (`frame_us - sustain_us`).
-- **Sécurité réseau & Internationalisation** :
-  - `network_security_config.xml` interdisant le trafic non chiffré en clair, restreint uniquement au réseau local pour le déport LAN.
-  - Traduction et extraction intégrale des chaînes d'interface en français et anglais (`strings.xml`).
-  - Documentation de compatibilité théorique et liste des appareils vérifiés (`COMPATIBILITY.md`).
 
 ### ⚠️ Limites connues
 - La voie par lignes (scintillement PWM) n'a pas été revalidée sur un vrai scintillement LED depuis ces modifications : les essais utilisent un scintillement simulé et des profils enregistrés sur téléphone.
@@ -36,7 +40,19 @@
 
 ## 🇬🇧 Release Notes (English)
 
-### 📱 Mobile Features & Improvements
+### 🚀 Bugfixes & Optimizations (v0.3.1)
+- **Core & Controller Optimizations (`ns-core`)**:
+  - **Incremental sliding window median** in $\mathcal{O}(n \cdot w)$ in `local_residual` (binary search insert/delete) substantially reducing per-frame CPU latency.
+  - **Octave disambiguation** at 17 Hz (70% duty cycle) by comparing luma fold ratios at $P$ and $P/2$ (expanded harmonic search window $\pm 8\%$).
+  - **Slow strobe solver plan (< 1.5 Hz)**: adapted `Gap` mode to cap exposure to full-frame duration (`frame_us - sustain_us`), enabling low-frequency lock.
+- **Android Network Security**:
+  - `network_security_config.xml` disabling cleartext traffic globally, strictly whitelisting local dev endpoints and LAN offload domains.
+- **Internationalization (i18n)**:
+  - Complete English and French translation across all layouts and Kotlin sources (`strings.xml` and `values-fr/strings.xml`).
+- **Device Compatibility Documentation**:
+  - Added `COMPATIBILITY.md` detailing theoretical Camera2 requirements and verified physical/virtual devices.
+
+### 📱 Mobile Features & Improvements (v0.3 Base)
 - **VIDEO | PHOTO | STROBE mode selector**: STROBE records with the slow strobe search. Switching to or from STROBE restarts the camera; the chosen mode is remembered.
 - **Burst photos**: a photo is a burst of 6 frames with fixed exposure and ISO. The frame no strobe pulse hit is kept (comparison on raw mean luma).
 - **Slow strobe search**: from 1 Hz to 0.4 × fps (12 Hz at 30 fps). The period is taken from the pulse times, with a search exposure that covers most of a frame *as the camera delivers it*. A lock needs a regular train (a pulse in nearly every cycle): a light that blinks now and then no longer locks. The lock is checked again every 20 s and dropped when the strobe has stopped. A strobe whose period has no workable exposure (under 1.5 Hz on some phones) crashed the app through endless recursion: fixed.
@@ -47,14 +63,6 @@
 - **More robust recording**: a system dialog (microphone permission, notification shade) no longer ends a recording; a lost camera is reopened once; a clip that has started is saved cleanly.
 - **Gallery**: photos open in a viewer, oriented from their EXIF metadata.
 - **Storage**: on Android 10 and later, the copy to DCIM goes through MediaStore and reports its result.
-- **Core & Controller Optimizations (v0.3)**:
-  - Incremental sliding window median in $\mathcal{O}(n \cdot w)$ in `local_residual` for reduced per-frame CPU latency.
-  - Octave disambiguation at 17 Hz (70% duty cycle) by comparing luma fold ratios at $P$ and $P/2$.
-  - Solver plan for slow strobes (< 1.5 Hz) using full-frame window exposure (`frame_us - sustain_us`).
-- **Network Security & Internationalization**:
-  - `network_security_config.xml` blocking public cleartext traffic, restricted strictly to local dev / LAN offload.
-  - Complete English and French localization in `strings.xml`.
-  - Theoretical hardware requirements and verified device list (`COMPATIBILITY.md`).
 
 ### ⚠️ Known Limits
 - The row-rate path (PWM flicker) has not been revalidated on a real LED flicker since these changes: the tests use a simulated flicker and row profiles recorded on a phone.

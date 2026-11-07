@@ -72,7 +72,7 @@ La luminance moyenne par image ne permet pas d'observer les fréquences supérie
 
 ---
 
-### Limites connues (version 0.3)
+### Limites connues (version 0.3.1)
 
 - **Scintillement PWM sur matériel** : la voie par lignes et sa vérification temporelle n'ont pas été revalidées sur un vrai scintillement LED depuis ces modifications. Les essais récents utilisent un scintillement simulé et des profils enregistrés sur téléphone.
 - **Scintillement de 120 ou 300 Hz devant une scène structurée** : un multiple de la cadence d'images ressemble, image après image, à la structure de la scène (texte, clavier) ; pas de verrouillage.
@@ -241,7 +241,7 @@ banding pattern.
 
 ---
 
-### Known limits (0.3)
+### Known limits (0.3.1)
 
 - **PWM flicker on hardware**: the row-rate path and its time check have not been revalidated on a real LED flicker since these changes. Recent tests use a simulated flicker and row profiles recorded on a phone.
 - **120 or 300 Hz flicker in front of a structured scene**: a multiple of the frame rate looks, frame after frame, like the structure of the scene (text, a keyboard); no lock.

@@ -51,11 +51,11 @@ Le tableau ci-dessous recense les appareils sur lesquels l'application a été d
 
 | Appareil / Environnement | Type | SoC / Processeur | OS & API | Version no-strobe | Statut & Validation |
 |---|---|---|---|---|---|
-| **Google Pixel 11 Pro Fold** / **Pixel 10 Pro XL** (`mustang`) | Physique (Pliable) | Google Tensor | Android 17 (API 37 Preview) | **v0.3** | **Validé à 100%**. Synchronisation PWM en direct, modes stroboscopiques (17 Hz duty 70% et < 1,5 Hz), rafale photo anti-strobe (`BurstPick`), transitions plié/déplié (sw600dp/sw700dp), encodage HEVC, permissions et signature release v2. |
+| **Google Pixel 11 Pro Fold** / **Pixel 10 Pro XL** (`mustang`) | Physique (Pliable) | Google Tensor | Android 17 (API 37 Preview) | **v0.3.1** | **Validé à 100%**. Synchronisation PWM en direct, modes stroboscopiques (17 Hz duty 70% et < 1,5 Hz), rafale photo anti-strobe (`BurstPick`), transitions plié/déplié (sw600dp/sw700dp), encodage HEVC, permissions et signature release v2. |
 | **Sony Xperia 1 III** (`pdx215` / `XQ-BC52`) | Physique | Qualcomm Snapdragon 888 | Android 11 à 13 (API 30–33) | **v0.1 / v0.2** | **Validé**. Verrouillage PWM confirmé sur vraie lampe 100 Hz (~10,3 ms, 99,5 Hz) et simulation 500 Hz. Mode High Speed 240 fps. Gestion du repli de flux en cas de restriction de caméra physique. |
-| **Émulateur Android API 34** (Tablette & Pliable) | Virtuel (AVD) | x86_64 | Android 14 (API 34) | **v0.3** | **Validé**. Interface adaptative grand écran (`res/layout-sw600dp`), internationalisation FR/EN, configuration de sécurité réseau (`network_security_config`). |
-| **Émulateur Android API 30** (Téléphone) | Virtuel (AVD) | x86_64 | Android 11 (API 30) | **v0.2 / v0.3** | **Validé**. Rétrocompatibilité API 30 (absence de sustain natif, repli sur cadence apprise). |
-| **Émulateur Android API 28** | Virtuel (AVD) | x86_64 | Android 9.0 (API 28) | **v0.3** | **Validé**. Non-régression NewApi, initialisation sans crash sur Android Pie. |
+| **Émulateur Android API 34** (Tablette & Pliable) | Virtuel (AVD) | x86_64 | Android 14 (API 34) | **v0.3.1** | **Validé**. Interface adaptative grand écran (`res/layout-sw600dp`), internationalisation FR/EN, configuration de sécurité réseau (`network_security_config`). |
+| **Émulateur Android API 30** (Téléphone) | Virtuel (AVD) | x86_64 | Android 11 (API 30) | **v0.2 / v0.3.1** | **Validé**. Rétrocompatibilité API 30 (absence de sustain natif, repli sur cadence apprise). |
+| **Émulateur Android API 28** | Virtuel (AVD) | x86_64 | Android 9.0 (API 28) | **v0.3.1** | **Validé**. Non-régression NewApi, initialisation sans crash sur Android Pie. |
 | **Apple iPhone / iOS** | Maquette | Apple Silicon | iOS 16+ | Maquette v0.1 | **Non fonctionnel**. Maquette SwiftUI/AVFoundation existante dans `platform/ios`, mais l'absence d'exposition publique du temps de lecture ligne (*sustain*) sur iOS empêche pour l'instant le verrouillage temps réel. |
 
 ---
@@ -122,11 +122,11 @@ To eliminate LED PWM flicker and rolling-shutter banding, a smartphone camera mu
 
 | Device / Environment | Type | SoC / Processor | OS & API | no-strobe Version | Verification Status |
 |---|---|---|---|---|---|
-| **Google Pixel 11 Pro Fold** / **Pixel 10 Pro XL** (`mustang`) | Physical (Foldable) | Google Tensor | Android 17 (API 37 Preview) | **v0.3** | **100% Verified**. Live PWM sync, strobe modes (17 Hz at 70% duty and < 1.5 Hz), anti-strobe photo burst (`BurstPick`), folded/unfolded layout switching (sw600dp/sw700dp), HEVC recording, permissions and signed release v2 APK. |
+| **Google Pixel 11 Pro Fold** / **Pixel 10 Pro XL** (`mustang`) | Physical (Foldable) | Google Tensor | Android 17 (API 37 Preview) | **v0.3.1** | **100% Verified**. Live PWM sync, strobe modes (17 Hz at 70% duty and < 1.5 Hz), anti-strobe photo burst (`BurstPick`), folded/unfolded layout switching (sw600dp/sw700dp), HEVC recording, permissions and signed release v2 APK. |
 | **Sony Xperia 1 III** (`pdx215` / `XQ-BC52`) | Physical | Qualcomm Snapdragon 888 | Android 11 to 13 (API 30–33) | **v0.1 / v0.2** | **Verified**. PWM lock validated under real 100 Hz lamp (~10.3 ms, 99.5 Hz) and synthetic 500 Hz flicker. High Speed 240 fps video mode. Logical camera fallback when physical pinned stream is rejected. |
-| **Android Emulator API 34** (Tablet & Foldable) | Virtual (AVD) | x86_64 | Android 14 (API 34) | **v0.3** | **Verified**. Wide screen adaptive layout (`res/layout-sw600dp`), EN/FR localization, network security config. |
-| **Android Emulator API 30** (Phone) | Virtual (AVD) | x86_64 | Android 11 (API 30) | **v0.2 / v0.3** | **Verified**. API 30 backward compatibility (no native sustain key, learned row rate fallback). |
-| **Android Emulator API 28** | Virtual (AVD) | x86_64 | Android 9.0 (API 28) | **v0.3** | **Verified**. NewApi backward compatibility check, crash-free launch on Android Pie. |
+| **Android Emulator API 34** (Tablet & Foldable) | Virtual (AVD) | x86_64 | Android 14 (API 34) | **v0.3.1** | **Verified**. Wide screen adaptive layout (`res/layout-sw600dp`), EN/FR localization, network security config. |
+| **Android Emulator API 30** (Phone) | Virtual (AVD) | x86_64 | Android 11 (API 30) | **v0.2 / v0.3.1** | **Verified**. API 30 backward compatibility (no native sustain key, learned row rate fallback). |
+| **Android Emulator API 28** | Virtual (AVD) | x86_64 | Android 9.0 (API 28) | **v0.3.1** | **Verified**. NewApi backward compatibility check, crash-free launch on Android Pie. |
 | **Apple iPhone / iOS** | Mock-up | Apple Silicon | iOS 16+ | Mock-up v0.1 | **Not operational**. Prototype SwiftUI/AVFoundation app in `platform/ios`, but lack of exposed line readout duration (*sustain*) on iOS prevents real-time lock. |
 
 ---

@@ -371,17 +371,21 @@ class MainActivity : AppCompatActivity() {
             showPostMenu()
             true
         }
-        val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips")
+        val clipsDir = getClipsDir()
+        val intClipsDir = File(filesDir, "clips")
         val moviesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "no-strobe")
-        val photosDir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "photos")
+        val photosDir = getPhotosDir()
+        val intPhotosDir = File(filesDir, "photos")
         val dcimDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "no-strobe")
         fun isMedia(f: File) = f.extension.equals("mp4", ignoreCase = true) ||
                                f.extension.equals("jpg", ignoreCase = true) ||
                                f.extension.equals("jpeg", ignoreCase = true) ||
                                f.extension.equals("png", ignoreCase = true)
         val hasMedia = (clipsDir.exists() && clipsDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
+                       (intClipsDir.exists() && intClipsDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
                        (moviesDir.exists() && moviesDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
                        (photosDir.exists() && photosDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
+                       (intPhotosDir.exists() && intPhotosDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
                        (dcimDir.exists() && dcimDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true)
         if (hasMedia) {
             postButton.visibility = android.view.View.VISIBLE
@@ -1020,8 +1024,7 @@ class MainActivity : AppCompatActivity() {
         }
         r.setOrientationHint(sensorOrientation())
         val timestamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-        val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
-        val clipsDir = File(dir, "clips").apply { mkdirs() }
+        val clipsDir = getClipsDir()
         val clipFile = File(clipsDir, "nostrobe-$timestamp.mp4")
         currentRecordingFile = clipFile
         r.setOutputFile(clipFile.path)
@@ -1206,7 +1209,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // Before Android 10 a shared-storage write needs a runtime permission: keep the
                 // copy in the app's own movies folder instead.
-                val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+                val dir = getClipsDir()
                 src.copyTo(File(dir, displayName), overwrite = true).path
             }
         } catch (e: Exception) {
@@ -1313,8 +1316,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun getClipsDir(): File {
+        val ext = getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+        if (ext != null) {
+            val d = File(ext, "clips")
+            if ((d.exists() && d.canWrite()) || d.mkdirs()) {
+                if (d.canWrite()) return d
+            }
+        }
+        return File(filesDir, "clips").apply { mkdirs() }
+    }
+
+    private fun getPhotosDir(): File {
+        val ext = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        if (ext != null) {
+            val d = File(ext, "photos")
+            if ((d.exists() && d.canWrite()) || d.mkdirs()) {
+                if (d.canWrite()) return d
+            }
+        }
+        return File(filesDir, "photos").apply { mkdirs() }
+    }
+
     private fun savePhoto(bytes: ByteArray) {
-        val appPhotosDir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "photos").apply { mkdirs() }
+        val appPhotosDir = getPhotosDir()
         val dateStr = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
         val name = "nostrobe-shot-" + dateStr + ".jpg"
         val appFile = File(appPhotosDir, name)

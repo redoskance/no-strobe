@@ -295,6 +295,20 @@
                 android:textSize="10sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/modeStrobe"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="4dp"
+                android:text="STROBE"
+                android:textColor="@color/m3_on_surface"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
         </LinearLayout>
 
         <View

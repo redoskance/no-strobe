@@ -308,7 +308,9 @@ object NsJni {
         periodUs = out[5],
         confidence = out[6],
         driftUsPerFrame = out[7],
-        flickerHz = out[8],
+        // The strobe path reports a period but no frequency (slot 8 is 0 there): derive it, so the status
+        // line and the open-loop carry of a lock work in the STROBE mode too.
+        flickerHz = if (out[8] > 0.0) out[8] else if (out[5] > 0.0) 1e6 / out[5] else 0.0,
     )
 }
 

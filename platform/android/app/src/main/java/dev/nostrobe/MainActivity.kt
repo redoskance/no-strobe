@@ -66,6 +66,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gridView: android.view.View
     private lateinit var countdownText: TextView
     private var micOn = true
+    // The slow strobe search (1-20 Hz) instead of the fast LED/PWM one: the STROBE segment of the mode selector.
+    private var strobeModeOn = false
     // Some devices (tablets, some foldables) have no microphone: no audio, no mic toggle, no permission prompt.
     private val hasMicrophone by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE) }
     private var layoutPortrait = true
@@ -114,10 +116,12 @@ class MainActivity : AppCompatActivity() {
     private var lastOrientation = 0
     private var lastCommand: NsJni.NsCommand? = null
 
-    enum class CaptureMode { VIDEO, PHOTO }
+    /** STROBE: video, searched with the slow strobe controller (1-20 Hz) instead of the fast LED/PWM one. */
+    enum class CaptureMode { VIDEO, PHOTO, STROBE }
     private var currentMode = CaptureMode.VIDEO
     private lateinit var modeVideoBtn: TextView
     private lateinit var modePhotoBtn: TextView
+    private lateinit var modeStrobeBtn: TextView
 
     private lateinit var photoButton: android.view.View
     private lateinit var shutterFlash: android.view.View
@@ -245,12 +249,16 @@ class MainActivity : AppCompatActivity() {
         recordButton = findViewById(R.id.record)
         modeVideoBtn = findViewById(R.id.modeVideo)
         modePhotoBtn = findViewById(R.id.modePhoto)
+        modeStrobeBtn = findViewById(R.id.modeStrobe)
         val savedModeStr = savedInstanceState?.getString("capture_mode")
             ?: prefs().getString("capture_mode", CaptureMode.VIDEO.name) ?: CaptureMode.VIDEO.name
         currentMode = try { CaptureMode.valueOf(savedModeStr) } catch (_: Exception) { CaptureMode.VIDEO }
+        // The `strobe_mode` extra (adb tests) opens the app in the STROBE mode.
+        if (intent.getBooleanExtra("strobe_mode", false)) currentMode = CaptureMode.STROBE
+        strobeModeOn = currentMode == CaptureMode.STROBE
 
         recordButton.setOnClickListener {
-            if (currentMode == CaptureMode.VIDEO) {
+            if (currentMode != CaptureMode.PHOTO) {
                 if (recorder == null && timerSecs > 0) startCountdown(timerSecs) { toggleRecord() } else toggleRecord()
             } else {
                 if (timerSecs > 0) startCountdown(timerSecs) { takeStillPhoto() } else takeStillPhoto()
@@ -269,6 +277,13 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             setCaptureMode(CaptureMode.PHOTO)
+        }
+        modeStrobeBtn.setOnClickListener {
+            if (recorder != null) {
+                Toast.makeText(this, "Impossible de changer de mode pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            setCaptureMode(CaptureMode.STROBE)
         }
         // photoButton must exist before updateModeUI() touches it (it crashed every cold start).
         photoButton = findViewById(R.id.photo)
@@ -473,7 +488,7 @@ class MainActivity : AppCompatActivity() {
         // Note: holder.setFixedSize was configured beforehand (in onCreate or selectLens),
         // ensuring the buffer geometry matches the 16:9 preview stream and eliminates anamorphic distortion.
         camera = NoStrobeCamera(
-            manager, option.logicalId, holder.surface, recorder, pwmMode = !intent.getBooleanExtra("strobe_mode", false),
+            manager, option.logicalId, holder.surface, recorder, pwmMode = !strobeModeOn,
             // While recording, do not pin a physical lens: on a Pixel 11 Pro Fold the recorder
             // surface of a pinned-lens stream received garbage frames (pure noise). The lock
             // (an exposure that is a multiple of the period) does not depend on the sensor, so
@@ -1093,26 +1108,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setCaptureMode(mode: CaptureMode) {
+        val wasStrobe = currentMode == CaptureMode.STROBE
         currentMode = mode
         prefs().edit().putString("capture_mode", mode.name).apply()
         updateModeUI()
+        // The strobe search is another controller: the camera restarts with it (not for VIDEO <-> PHOTO).
+        val strobe = mode == CaptureMode.STROBE
+        if (strobe != wasStrobe) {
+            strobeModeOn = strobe
+            Toast.makeText(this, if (strobe) "Mode strobe lent (1–20 Hz)" else "Mode LED rapide", Toast.LENGTH_SHORT).show()
+            camera?.stop(); camera = null
+            if (isSurfaceReady) startCamera()
+        }
     }
 
     private fun updateModeUI() {
-        if (!::modeVideoBtn.isInitialized || !::modePhotoBtn.isInitialized || !::photoButton.isInitialized) return
-        if (currentMode == CaptureMode.VIDEO) {
-            modeVideoBtn.setBackgroundResource(R.drawable.bg_strip)
-            modeVideoBtn.setTextColor(0xFFFFFFFF.toInt())
-            modePhotoBtn.background = null
-            modePhotoBtn.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))
+        if (!::modeVideoBtn.isInitialized || !::modePhotoBtn.isInitialized || !::modeStrobeBtn.isInitialized ||
+            !::photoButton.isInitialized) return
+        val selected = when (currentMode) {
+            CaptureMode.VIDEO -> modeVideoBtn
+            CaptureMode.PHOTO -> modePhotoBtn
+            CaptureMode.STROBE -> modeStrobeBtn
+        }
+        for (b in listOf(modeVideoBtn, modePhotoBtn, modeStrobeBtn)) {
+            if (b === selected) {
+                b.setBackgroundResource(R.drawable.bg_strip)
+                b.setTextColor(0xFFFFFFFF.toInt())
+            } else {
+                b.background = null
+                b.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))
+            }
+        }
+        if (currentMode != CaptureMode.PHOTO) {
             recordButton.setBackgroundResource(if (recorder != null) R.drawable.capture_recording else R.drawable.capture_button)
             recordButton.contentDescription = "record"
             photoButton.visibility = android.view.View.VISIBLE
         } else {
-            modePhotoBtn.setBackgroundResource(R.drawable.bg_strip)
-            modePhotoBtn.setTextColor(0xFFFFFFFF.toInt())
-            modeVideoBtn.background = null
-            modeVideoBtn.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))
             recordButton.setBackgroundResource(R.drawable.capture_idle)
             recordButton.contentDescription = "photo"
             photoButton.visibility = android.view.View.GONE

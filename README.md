@@ -12,10 +12,12 @@ Application caméra pour Android et iOS conçue pour filmer des concerts sans sc
 
 | Mode | Source lumineuse | Fréquence | Statut |
 |---|---|---|---|
-| **PWM** | Projecteurs LED, panneaux de scène, écrans | 100 Hz – 5 kHz | **Cible principale**, temps réel sur Android et iOS |
-| **Strobe** | Éclairs délibérés lents | 1 – 25 Hz | Expérimental (voir *Modes stroboscopiques*) |
+| **PWM** | Projecteurs LED, panneaux de scène, écrans | 100 Hz – 5 kHz | **Cible principale**, temps réel sur Android (iOS : pas encore fonctionnel, voir *Limites connues*) |
+| **Strobe** | Éclairs délibérés lents (lampes de police) | 1 Hz à 0,4 × fps (12 Hz à 30 images/s) | Expérimental (voir *Modes stroboscopiques*) |
 
 Un outil de post-traitement sur ordinateur permet également de corriger les vidéos enregistrées sans synchronisation (voir *Post-traitement*).
+
+Le contexte des strobes lents (lampes de police) et les applis qui s'y rapportent sont décrits dans [STROBE-POLICE.md](STROBE-POLICE.md).
 
 Pour installer l'application sur votre smartphone sans passer par les stores, consultez le [Guide d'installation pas à pas](INSTALL.md).
 
@@ -49,17 +51,33 @@ La luminance moyenne par image ne permet pas d'observer les fréquences supérie
 2. `robust_period_rows` applique un filtre laplacien spatial $\Delta^2$, centre le signal, et calcule la corrélation de Pearson pour détecter la période $T$ en nombre de lignes en moins d'une trame.
 3. Le contrôleur bascule instantanément à `k/f`, calcule la compensation ISO pour maintenir l'exposition globale, et engage la PLL pour maintenir le calage de phase.
 4. Si le temps de lecture ligne est inconnu (iOS), le contrôleur effectue une descente de gradient sur l'amplitude de banding résiduelle.
+5. **Rejet du bruit** : une modulation mesurée plus forte que ce qu'un scintillement de 100 Hz ou plus peut produire (scène sombre, bruit du capteur) n'est pas retenue comme verrouillage. Une fréquence lue sur les lignes n'est acceptée qu'après une vérification dans le temps (le centre de l'exposition contre des sondes plus lointaines).
+6. **ISO** : pendant la recherche, l'ISO reste sous 1 600 (au-delà, l'aperçu et les mesures sont surtout du bruit). Au-delà de 3 200, une pose plus longue, toujours sur un multiple de la période, est préférée.
 
 ---
 
 ### Fonctionnalités de l'Application Mobile
 
-- **Modes Vidéo & Photo (Sélecteur au-dessus du déclencheur)** : Basculez en un geste entre la vidéo anti-scintillement et la prise de vue photo haute résolution, calée sur l'exposition et l'ISO synchronisés.
+- **Modes Vidéo, Photo & Strobe (sélecteur au-dessus du déclencheur : VIDEO | PHOTO | STROBE)** : VIDEO enregistre une vidéo anti-scintillement, PHOTO prend une rafale haute résolution, STROBE enregistre avec la recherche lente de strobe. Passer vers ou depuis STROBE redémarre la caméra ; le mode choisi est mémorisé.
 - **Post-traitement sur l'appareil (Local)** : Deux passes complètes (analyse SIMD puis réencodage AVC matériel) pour corriger le pompage de luminosité et le banding sans nécessiter d'ordinateur.
 - **Galerie Avant / Après intégrée (Vidéos & Photos)** : Affiche les vidéos et les photos dans leur orientation exacte (métadonnées EXIF). Permet de comparer immédiatement vos prises avec un bouton interactif « Maintenir pour comparer », de partager vos créations et de visualiser les résultats en boucle.
 - **Déport sur serveur LAN (`no-strobe-post serve`)** : Connectez votre téléphone à votre serveur local en Wi-Fi pour déporter les traitements lourds avec détection automatique de stockage faible (< 500 Mo) et bouton de test de connectivité.
 - **Support des smartphones pliables (Pixel Fold, etc.)** : Transition fluide entre les caméras frontales externe et interne, et ergonomie adaptée en mode déplié (viseur 16:9 à gauche, commandes à droite).
 - **Menu de diagnostic technique masqué** : 5 tapotements sur le badge de statut permettent d'ouvrir un rapport complet et de l'exporter en un clic vers GitHub Issues.
+- **Photos en rafale** : une photo est une rafale de 6 trames, à exposition et ISO fixes. Comme une impulsion de strobe peut frapper certaines trames seulement, la trame qu'aucune impulsion n'a frappée est conservée : les trames sont comparées sur la luminance brute, les trames nettement plus claires (impulsion) sont écartées, et la moins marquée par le banding est gardée.
+- **Mode STROBE** : recherche lente d'un strobe de 1 Hz à 0,4 × fps. La période est déduite des instants des impulsions. Au-delà de fps/2 la lumière est repliée (alias) : il faut 60 images/s pour suivre un strobe au-dessus de 12 Hz, et un téléphone peut tourner à 30 images/s dans l'obscurité.
+- **Enregistrement HEVC** : quand l'appareil dispose d'un encodeur HEVC, les vidéos sont enregistrées en H.265 (plus compact à bruit égal). Elles se corrigent sur le téléphone ou avec `no-strobe-post` sur ordinateur.
+- **Écran toujours allumé** : l'écran reste allumé tant que l'application est au premier plan, pour qu'une prise longue ne soit pas interrompue par la mise en veille.
+
+---
+
+### Limites connues (version 0.3)
+
+- **Scintillement PWM sur matériel** : la voie par lignes et sa vérification temporelle n'ont pas été revalidées sur un vrai scintillement LED depuis ces modifications. Les essais récents utilisent un scintillement simulé et des profils enregistrés sur téléphone.
+- **Rafales photo** : jamais observées sous un vrai strobe.
+- **Strobe et repliement** : au-dessus de fps/2 (15 Hz à 30 images/s), la luminance des trames est repliée ; un strobe plus rapide peut alors être confondu avec un strobe plus lent. La recherche s'arrête à 0,4 × fps.
+- **iOS** : l'application iOS est une maquette et ne traite pas le scintillement LED.
+- **Appareils 32 bits** : aucun appareil 32 bits réel n'a été testé (l'APK embarque armeabi-v7a).
 
 ---
 
@@ -78,7 +96,7 @@ crates/ns-core/        Cœur algorithmique pur sans dépendance externe
 crates/ns-ffi/         Interface C (en-tête cbindgen) et passerelle JNI pour Android
 crates/ns-post/        Outil no-strobe-post : CLI, serveur HTTP offload, pipeline ffmpeg
 platform/android/      Application Android (Gradle, Camera2, Material You / M3)
-platform/ios/          Application iOS (SwiftUI, Liquid Glass, AVFoundation)
+platform/ios/          Maquette iOS (SwiftUI, AVFoundation), pas encore fonctionnelle pour le scintillement
 tools/                 Scripts de test, banc d'essai et simulation de scintillement
 ```
 
@@ -91,16 +109,16 @@ Pour les utilisateurs finaux, téléchargez directement le fichier `app-debug.ap
 #### Compilation native (Android NDK)
 ```sh
 cargo install cargo-ndk
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+rustup target add aarch64-linux-android armv7-linux-androideabi
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main/jniLibs \
-    build -p ns-ffi --release
+cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs \
+    build -p ns-ffi --release --features android
 ```
 
 #### Assemblage de l'APK Android
 ```sh
 cd platform/android
-./gradlew assembleDebug
+gradle :app:assembleDebug   # Gradle 9.x ; le dépôt n'a pas de wrapper gradlew
 # Génère platform/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -148,10 +166,12 @@ amount of light: no banding, no brightness pumping.
 
 | Mode | Light source | Frequency | Status |
 |---|---|---|---|
-| **PWM** | LED projectors, stage screens | 100 Hz–5 kHz | **main target**, real-time on Android and iOS |
-| **Strobe** | deliberate slow flashes | 1–25 Hz | experimental, outside the project scope (see *Strobe modes*) |
+| **PWM** | LED projectors, stage screens | 100 Hz–5 kHz | **main target**, real-time on Android (iOS: not implemented yet, see *Known limits*) |
+| **Strobe** | deliberate slow flashes (police torches) | 1 Hz to 0.4 × fps (12 Hz at 30 fps) | experimental, outside the project scope (see *Strobe modes*) |
 
 A desktop post-processing tool fixes clips recorded without sync (see *Post-processing*).
+
+The context of slow strobes (police torches) and the related apps are described in [STROBE-POLICE.md](STROBE-POLICE.md).
 
 For direct APK installation on your smartphone, see the step-by-step [Installation Guide](INSTALL.md).
 
@@ -197,17 +217,33 @@ banding pattern.
 2. `robust_period_rows` applies a discrete Laplacian filter $\Delta^2$, centers the profile, and computes Pearson cross-correlation to estimate $T$ in rows in a single frame.
 3. The controller switches directly to `k/f`, compensates ISO to maintain overall frame exposure, and activates the PLL.
 4. When the sensor's row readout rate is unknown (iOS), the controller hill-climbs on banding amplitude directly.
+5. **Noise rejection**: a measured modulation stronger than a 100 Hz or faster flicker can produce (dark scene, sensor noise) is not accepted as a lock. A frequency read from the rows is accepted only after a check over time (the centre of the exposure against farther probes).
+6. **ISO**: during the search, ISO stays below 1,600 (above it the preview and the measurements are mostly noise). Above 3,200, a longer exposure, still on a multiple of the period, is preferred.
 
 ---
 
 ### Mobile Application Features
 
-- **Video & Photo Modes (Above-Shutter Selector)**: Switch seamlessly between flicker-free video recording and high-res still photo capture carrying locked exposure and ISO parameters.
+- **Video, Photo & Strobe Modes (Above-Shutter Selector: VIDEO | PHOTO | STROBE)**: VIDEO records flicker-free video, PHOTO takes a high-res burst, STROBE records with the slow strobe search. Switching to or from STROBE restarts the camera; the chosen mode is remembered.
 - **On-Device Post-Processing (Local)**: Full dual-pass correction pipeline (SIMD luma pass + hardware AVC encoding) flattening temporal pumping and row banding directly on the phone.
 - **Integrated Before / After Gallery (Videos & Photos)**: Displays both video clips and still photos in their correct orientation via EXIF rotation metadata. Features instant comparison viewer with a tactile "Hold to compare" interaction, clip sharing via `FileProvider`, and background processing progress.
 - **LAN Server Offloading (`no-strobe-post serve`)**: Easy Wi-Fi connection to a desktop server for compute-heavy clips, automatic low-storage warnings (< 500 MB), and connection testing.
 - **Foldable Devices Support (Pixel Fold, etc.)**: Dynamic routing between cover and inner front cameras, and unfolded dual-pane layout (16:9 viewfinder on left, controls on right).
 - **Diagnostic Report & GitHub Export**: Hidden 5-tap debug report menu for instant, emoji-free bug reports exported directly into GitHub issues.
+- **Burst photos**: a photo is a burst of 6 frames with fixed exposure and ISO. A strobe pulse may hit only some of them, so the frame no pulse hit is kept: frames are compared on raw mean luma, clearly brighter frames (a pulse) are discarded, and the least banded of the rest is kept.
+- **STROBE mode**: slow strobe search from 1 Hz to 0.4 × fps. The period is taken from the pulse times. Above fps/2 the light aliases: a strobe above 12 Hz needs 60 frames per second to be followed, and a phone may run at 30 fps in the dark.
+- **HEVC recording**: when the device has an HEVC encoder, videos are recorded in H.265 (smaller files at the same noise level). They are corrected on the phone or with `no-strobe-post` on a computer.
+- **Screen kept on**: the screen stays on while the app is in front, so a long take is not cut by the screen timeout.
+
+---
+
+### Known limits (0.3)
+
+- **PWM flicker on hardware**: the row-rate path and its time check have not been revalidated on a real LED flicker since these changes. Recent tests use a simulated flicker and row profiles recorded on a phone.
+- **Burst photos**: never observed under a real strobe.
+- **Strobe aliasing**: above fps/2 (15 Hz at 30 fps) the frame luma aliases; a faster strobe can then be mistaken for a slower one. The search stops at 0.4 × fps.
+- **iOS**: the iOS app is a mock-up and does not handle LED flicker.
+- **32-bit devices**: no real 32-bit device has been tested (the APK ships armeabi-v7a).
 
 ---
 
@@ -226,7 +262,7 @@ crates/ns-core/        platform-free algorithm (no external deps)
 crates/ns-ffi/         C API (cbindgen header) + JNI for Android
 crates/ns-post/        no-strobe-post: fix.rs (streaming ffmpeg), serve.rs (HTTP server), main.rs (CLI)
 platform/android/      Android app (Gradle, Camera2, Material 3 UI)
-platform/ios/          iOS app (SwiftUI, Liquid Glass UI, AVFoundation)
+platform/ios/          iOS mock-up (SwiftUI, AVFoundation); not a working flicker app yet
 tools/                 test scripts, flicker generator, test probes
 ```
 
@@ -239,16 +275,16 @@ Users can download the latest `app-debug.apk` directly from GitHub [Releases](ht
 #### Build native JNI libraries
 ```sh
 cargo install cargo-ndk
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+rustup target add aarch64-linux-android armv7-linux-androideabi
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main/jniLibs \
-    build -p ns-ffi --release
+cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs \
+    build -p ns-ffi --release --features android
 ```
 
 #### Assemble Android APK
 ```sh
 cd platform/android
-./gradlew assembleDebug
+gradle :app:assembleDebug   # Gradle 9.x; the repository has no gradlew wrapper
 # Produces platform/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 

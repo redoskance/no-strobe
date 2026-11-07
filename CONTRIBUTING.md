@@ -8,7 +8,7 @@
 
 Le projet filme des concerts : l'application mesure le scintillement des projecteurs et écrans LED et ajuste le temps d'exposition du capteur caméra sur un multiple entier de périodes de scintillement, afin que chaque image et chaque ligne du capteur reçoivent exactement la même quantité de lumière.
 
-Le mode principal supporté est le **scintillement PWM de 100 Hz à 5 kHz** (projecteurs LED, murs d'écrans de scène). Le mode stroboscopique (1–25 Hz) est expérimental et secondaire.
+Le mode principal supporté est le **scintillement PWM de 100 Hz à 5 kHz** (projecteurs LED, murs d'écrans de scène). Le mode stroboscopique (1 Hz à 0,4 × fps) est expérimental et secondaire.
 
 ---
 
@@ -24,8 +24,8 @@ Pour compiler les bibliothèques natives Android avec `cargo-ndk` :
 
 ```sh
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main/jniLibs \
-    build -p ns-ffi --release
+cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs \
+    build -p ns-ffi --release --features android
 ```
 
 Le dossier `jniLibs` est généré lors du build et n'est pas versionné dans git.
@@ -58,7 +58,7 @@ Gardez les branches dans le même historique linéaire. Ne faites pas de rebase 
 
 ```sh
 cargo test --workspace
-cd platform/android && ./gradlew testDebugUnitTest
+cd platform/android && gradle :app:testDebugUnitTest
 ```
 
 Les deux suites de tests doivent passer à 100 %.
@@ -74,8 +74,19 @@ L'émulateur Android ne supporte pas l'exposition manuelle (`MANUAL_SENSOR`). Le
 ```sh
 adb -s <serial> install -r -g platform/android/app/build/outputs/apk/debug/app-debug.apk
 adb -s <serial> shell am force-stop dev.nostrobe
-adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --es sim_hz 500
+adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --ed sim_hz 500
 adb -s <serial> logcat -d -s nostrobe:V
+```
+
+Les extras se passent avec `--ei` (entier), `--ed` (décimal), `--ez` (booléen) ou `--es` (chaîne). `sim_hz` injecte un scintillement simulé (lu comme décimal : `--es` le rendrait silencieusement inactif).
+
+Pour relever les profils de lignes d'un flicker réel à plusieurs expositions (expositions en microsecondes, séparées par des virgules ; sans `--es`, une grille par défaut est utilisée) :
+
+```sh
+adb -s <serial> shell am force-stop dev.nostrobe
+adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --ez dump_profiles true --es dump_exposures 8000,8500,9000,9500
+adb -s <serial> logcat -d -s nostrobe:V    # attendre la ligne « dump: done »
+adb -s <serial> pull /storage/emulated/0/Android/data/dev.nostrobe/cache/profiles.csv
 ```
 
 ---
@@ -96,7 +107,7 @@ adb -s <serial> logcat -d -s nostrobe:V
 
 The project films concerts: the app measures LED flicker and sets the sensor exposure to a whole number of flicker cycles (`exposure = k/f`), so frames and sensor rows integrate the exact same light: no horizontal banding, no brightness pumping.
 
-The supported mode is **PWM flicker from 100 Hz to 5 kHz** (LED projectors, stage screens). The strobe mode (1–25 Hz) is experimental and secondary.
+The supported mode is **PWM flicker from 100 Hz to 5 kHz** (LED projectors, stage screens). The strobe mode (1 Hz to 0.4 × fps) is experimental and secondary.
 
 ---
 
@@ -112,8 +123,8 @@ Build phone native libraries using `cargo-ndk`:
 
 ```sh
 export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main/jniLibs \
-    build -p ns-ffi --release
+cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs \
+    build -p ns-ffi --release --features android
 ```
 
 `jniLibs` is generated build output and is not tracked in git. The desktop post-processing tool requires `ffmpeg` and `ffprobe` in PATH (`cargo build --release -p ns-post`).
@@ -143,7 +154,7 @@ cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main
 
 ```sh
 cargo test --workspace
-cd platform/android && ./gradlew testDebugUnitTest
+cd platform/android && gradle :app:testDebugUnitTest
 ```
 
 Both test suites must pass 100%. Add unit tests for any new or modified behaviour.
@@ -157,6 +168,17 @@ The Android emulator lacks `MANUAL_SENSOR` capabilities. Closed-loop flicker tra
 ```sh
 adb -s <serial> install -r -g platform/android/app/build/outputs/apk/debug/app-debug.apk
 adb -s <serial> shell am force-stop dev.nostrobe
-adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --es sim_hz 500
+adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --ed sim_hz 500
 adb -s <serial> logcat -d -s nostrobe:V
+```
+
+Extras are passed with `--ei` (integer), `--ed` (decimal), `--ez` (boolean) or `--es` (string). `sim_hz` injects a simulated flicker (read as a decimal: with `--es` it would be silently ignored).
+
+To record the row profiles of a real flicker at several exposures (exposures in microseconds, comma-separated; without `--es` a default grid is used), the output is `profiles.csv` in the app's external cache:
+
+```sh
+adb -s <serial> shell am force-stop dev.nostrobe
+adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --ez dump_profiles true --es dump_exposures 8000,8500,9000,9500
+adb -s <serial> logcat -d -s nostrobe:V    # wait for the line "dump: done"
+adb -s <serial> pull /storage/emulated/0/Android/data/dev.nostrobe/cache/profiles.csv
 ```

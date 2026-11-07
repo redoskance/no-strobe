@@ -30,10 +30,8 @@ Par défaut, Android protège votre appareil en bloquant les applications qui ne
 
 #### Étape 3 : Installer l'application
 1. Appuyez sur **Installer**.
-2. **Avertissement Google Play Protect** : Un écran bleu ou jaune peut apparaître indiquant *"Application bloquée par Play Protect"* ou *"Développeur inconnu"*.
-   - Appuyez sur **Plus de détails** (ou *Détails*).
-   - Appuyez sur **Installer quand même**.
-   *(Cet avertissement est normal : No Strobe est un projet open-source indépendant qui n'a pas encore payé les certificats commerciaux de Google).*
+2. **Avertissement Google Play Protect** : Play Protect peut afficher un avertissement indiquant que l'application provient d'un développeur non reconnu ou n'a pas été vérifiée.
+   *(C'est attendu : l'APK est signé avec la clé de débogage et distribué hors du Play Store, donc non vérifié par Google. Si vous faites confiance à la source, poursuivez l'installation avec les options proposées par votre téléphone ; leur libellé dépend de la version d'Android.)*
 3. Dès que l'installation est terminée, appuyez sur **Ouvrir**.
 
 #### Étape 4 : Autorisations nécessaires
@@ -65,7 +63,7 @@ Pour les développeurs qui souhaitent compiler l'application eux-mêmes :
 - **Android NDK** (version 25 ou supérieure) : via Android Studio ou standalone
 - **cargo-ndk** : `cargo install cargo-ndk`
 - **JDK 17 ou 21**
-- **Gradle**
+- **Gradle 9.x** (le dépôt ne contient pas de wrapper `gradlew` : utilisez `gradle`, comme la CI)
 
 #### Compilation
 ```sh
@@ -78,11 +76,11 @@ cargo test --workspace
 
 # 3. Compiler les bibliothèques natives Android
 export ANDROID_NDK_HOME=/chemin/vers/votre/ndk
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main/jniLibs build -p ns-ffi --release
+cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs build -p ns-ffi --release --features android
 
 # 4. Assembler l'APK Android
 cd platform/android
-./gradlew assembleDebug
+gradle :app:assembleDebug
 # L'APK compilé se trouve dans platform/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -90,9 +88,7 @@ cd platform/android
 
 ### Installation sur iPhone (iOS)
 
-Sur iOS, les applications hors App Store nécessitent une signature personnelle :
-1. **Via AltStore / Sideloadly** : Téléchargez le package IPA depuis les Releases GitHub et installez-le avec votre identifiant Apple gratuit.
-2. **Via Xcode** : Ouvrez `platform/ios/NoStrobe.xcodeproj` dans Xcode, sélectionnez votre iPhone et votre équipe personnelle, puis cliquez sur *Run*.
+Il n'existe pas encore de build iOS installable de No Strobe. Le dépôt contient une maquette iOS (`platform/ios/app`, projet généré avec XcodeGen) qui ne traite pas le scintillement LED ; la release publie seulement `AntiStrobe-Simulator.app.zip`, un build pour le simulateur Xcode et non pour un iPhone. Aucun fichier IPA n'est publié : ne tentez pas d'installer cette archive avec AltStore ou Sideloadly.
 
 ---
 
@@ -135,10 +131,8 @@ By default, Android blocks apps that do not come from the Play Store. To allow i
 
 #### Step 3: Install the application
 1. Tap **Install**.
-2. **Google Play Protect Warning**: If a blue/yellow prompt appears stating *"Blocked by Play Protect"* or *"Unknown developer"*:
-   - Tap **More details**.
-   - Tap **Install anyway**.
-   *(This warning is expected: No Strobe is an independent open-source project and does not carry commercial Google signatures).*
+2. **Google Play Protect warning**: Play Protect may show a warning that the app comes from an unknown or unverified developer.
+   *(This is expected: the APK is signed with the debug key and distributed outside the Play Store, so Google has not verified it. If you trust the source, continue the installation with the options your phone offers; their wording depends on the Android version.)*
 3. Once installation completes, tap **Open**.
 
 #### Step 4: Grant required permissions
@@ -169,7 +163,7 @@ For developers who wish to compile from source:
 - **Android NDK** (version 25+): via Android Studio or standalone
 - **cargo-ndk**: `cargo install cargo-ndk`
 - **JDK 17 or 21**
-- **Gradle**
+- **Gradle 9.x** (the repository has no `gradlew` wrapper: use `gradle`, as CI does)
 
 #### Build Steps
 ```sh
@@ -182,11 +176,11 @@ cargo test --workspace
 
 # 3. Build native shared libraries
 export ANDROID_NDK_HOME=/path/to/your/ndk
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o platform/android/app/src/main/jniLibs build -p ns-ffi --release
+cargo ndk -t arm64-v8a -t armeabi-v7a -o platform/android/app/src/main/jniLibs build -p ns-ffi --release --features android
 
 # 4. Assemble Android APK
 cd platform/android
-./gradlew assembleDebug
+gradle :app:assembleDebug
 # Generated APK: platform/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -194,6 +188,4 @@ cd platform/android
 
 ### iPhone (iOS) Installation
 
-On iOS, installing applications outside the App Store requires personal signing:
-1. **Via AltStore / Sideloadly**: Download the `.ipa` package from GitHub Releases and install with your personal Apple ID.
-2. **Via Xcode**: Open `platform/ios/NoStrobe.xcodeproj` in Xcode, select your connected iPhone and personal team, and click *Run*.
+There is no installable iOS build of No Strobe yet. The repository contains an iOS mock-up (`platform/ios/app`, project generated with XcodeGen) that does not handle LED flicker; the release only publishes `AntiStrobe-Simulator.app.zip`, a build for the Xcode simulator and not for an iPhone. No IPA file is published: do not try to install this archive with AltStore or Sideloadly.

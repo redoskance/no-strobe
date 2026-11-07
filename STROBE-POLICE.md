@@ -1,9 +1,10 @@
-# Strobes lents (lampes de police) : applis de la branche `ios`
+# Strobes lents (lampes de police) : applis du dépôt
 
 Contexte : la police utilise des lampes torches en mode strobe, à fréquence quasi fixe (~15 Hz mesurés sur une
 vidéo réelle), pour empêcher de filmer. Ce n'est pas le cœur de `no-strobe` (LED PWM de concert, 100 Hz–5 kHz), mais
-c'est le chemin « strobe » que le README classe expérimental. Cette branche ajoute trois applis autonomes (sans le
-cœur Rust) qui traitent ce cas, et note ce que les deux approches peuvent s'apporter.
+c'est le chemin « strobe » que le README classe expérimental. Le dépôt contient aussi des applis autonomes (sans le
+cœur Rust) qui traitent ce cas, dans `platform/ios/app`, `platform/android-strobe` et `tools/android-strobe-flasher`,
+et note ce que les deux approches peuvent s'apporter.
 
 ## Contenu
 

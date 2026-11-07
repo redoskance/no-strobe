@@ -531,7 +531,8 @@ impl PwmController {
                 cands.push((amp[i] / nb, self.scan_res[i].0));
             }
         }
-        if self.scan_res.len() < 5 || hi < TEMPORAL_FLOOR || cands.is_empty() {
+        // Three points are enough for an interior minimum; a narrow range (120 fps frames) has only a few.
+        if self.scan_res.len() < 4 || hi < TEMPORAL_FLOOR || cands.is_empty() {
             // Nothing stands out: no flicker, or too dark. Scan again.
             return self.start_blind_sweep();
         }
@@ -989,7 +990,9 @@ impl PwmController {
             far = m;
             far_e = self.verify_lo_e;
         }
-        let deep = far.is_infinite() || self.verify_centre < VERIFY_RATIO * far;
+        // No far probe that really moved (both clamped by the range) proves nothing: a null needs a
+        // measured contrast with its surroundings. (It used to pass vacuously.)
+        let deep = !far.is_infinite() && self.verify_centre < VERIFY_RATIO * far;
         if deep && self.verify_coarse {
             // The coarse minimum is a real null: this exposure is k / f for some k. The fine
             // climb continues from here, so k is not assumed to be 1.

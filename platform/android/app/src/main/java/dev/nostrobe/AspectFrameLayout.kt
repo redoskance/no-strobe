@@ -30,6 +30,19 @@ class AspectFrameLayout @JvmOverloads constructor(
         }
 
     /**
+     * Width left to a sibling beside the box (the controls of the side-by-side layout), in pixels. The box
+     * keeps its ratio inside what remains, so a tall frame on a big screen or a wide frame on a landscape
+     * one cannot squeeze the controls to a sliver or to nothing.
+     */
+    var reservedWidthPx = 0
+        set(value) {
+            if (field != value) {
+                field = value
+                requestLayout()
+            }
+        }
+
+    /**
      * The camera image's orientation relative to the screen, in degrees (sensor orientation minus the
      * display rotation for a back camera, plus it for a front one). A tablet whose sensor is mounted
      * at 0 shows a landscape frame on its landscape screen; the phone assumption said portrait.
@@ -56,7 +69,7 @@ class AspectFrameLayout @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        val maxW = MeasureSpec.getSize(widthSpec)
+        val maxW = MeasureSpec.getSize(widthSpec) - reservedWidthPx
         val maxH = (MeasureSpec.getSize(heightSpec) * maxHeightShare).toInt()
         if (maxW <= 0 || maxH <= 0) {
             super.onMeasure(widthSpec, heightSpec)

@@ -49,6 +49,9 @@ internal fun hasHevcEncoder(codecs: List<Pair<Boolean, Array<String>>>): Boolean
 class MainActivity : AppCompatActivity() {
     private companion object {
         const val MAX_VIDEO_BITRATE = 30_000_000
+
+        /** What the controls beside the viewfinder need: the shutter row (gallery, photo, shutter, flip) and the tool row. */
+        const val MIN_PANEL_DP = 340f
     }
 
     private var camera: NoStrobeCamera? = null
@@ -719,13 +722,20 @@ class MainActivity : AppCompatActivity() {
     /**
      * A tablet or an unfolded foldable held upright (clearly taller than wide): the side-by-side layout gives
      * the whole width to the viewfinder and the controls none. Stack them instead, viewfinder on top and
-     * the controls under it. A nearly square screen (an unfolded foldable) keeps the side-by-side layout.
+     * the controls under it. A nearly square screen (an unfolded foldable) keeps the side-by-side layout,
+     * with the viewfinder leaving the controls the room they need.
      */
     private fun stackIfUpright(aspect: AspectFrameLayout?) {
         val panel = findViewById<android.view.View?>(R.id.rightPanel) ?: return
         val root = panel.parent as? android.widget.LinearLayout ?: return
         val c = resources.configuration
-        if (aspect == null || c.screenHeightDp < c.screenWidthDp * 1.25) return
+        if (aspect == null) return
+        if (c.screenHeightDp < c.screenWidthDp * 1.25) {
+            // A 9:16 viewfinder the full height of an unfolded 775 x 930 dp foldable left the controls ~250 dp:
+            // a cut-off tool row and overlapping buttons. A 16:9 one on a landscape screen could take the whole width.
+            aspect.reservedWidthPx = (MIN_PANEL_DP * resources.displayMetrics.density).toInt()
+            return
+        }
         root.orientation = android.widget.LinearLayout.VERTICAL
         aspect.layoutParams = android.widget.LinearLayout.LayoutParams(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)

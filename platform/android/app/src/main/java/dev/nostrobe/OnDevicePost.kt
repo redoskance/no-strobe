@@ -12,9 +12,9 @@ import java.nio.ByteBuffer
 
 /**
  * Post-processing on the phone: flattens whole-frame brightness pumping (the same idea as the
- * restorer's temporal gain). Two passes: decode to measure each frame's luma, then decode again,
- * scale the luma by the gain and encode to H.264. The row-banding gain is left to the desktop
- * tool (it needs the sensor row rate and costs far more on a phone).
+ * restorer's temporal gain) and corrects rolling shutter row-banding. Two passes: decode to measure
+ * each frame's luma (pass 1), then decode again, compute row and temporal gains, apply SIMD LUT /
+ * direct buffer plane operations, and encode to AVC with audio passthrough (pass 2).
  *
  * Runs on the calling thread; the clip must be H.264/HEVC video the device can decode.
  */
@@ -26,11 +26,20 @@ object OnDevicePost {
     class PostException(message: String) : Exception(message)
 
     fun fix(src: File, dst: File, lineRateHz: Double = 0.0, onProgress: (Int) -> Unit) {
+        if (!src.exists() || src.length() == 0L) {
+            throw PostException("Le fichier source n'existe pas ou est vide")
+        }
         val means = ArrayList<Double>()
-        decode(src) { image, _ -> means.add(meanLuma(image)); onProgress(0) }
+        // Pass 1: measure luma per frame (0% - 30% progress)
+        decode(src, onFrame = { image, _ -> means.add(meanLuma(image)) }, onDecodeProgress = { pct ->
+            onProgress((pct * 0.3).toInt())
+        })
         if (means.isEmpty()) throw PostException("no frames decoded")
         val gains = temporalGain(means.toDoubleArray(), WINDOW, MAX_GAIN)
-        encodeWithGains(src, dst, gains, lineRateHz, onProgress)
+        // Pass 2: apply gains and encode (30% - 100% progress)
+        encodeWithGains(src, dst, gains, lineRateHz) { pct ->
+            onProgress(30 + (pct * 0.7).toInt())
+        }
     }
 
     /** Same formula as `ns_core::restorer::temporal_gain`. */
@@ -88,9 +97,14 @@ object OnDevicePost {
     }
 
     /** Decodes every frame in presentation order and hands each Image to [onFrame]. */
-    private fun decode(file: File, onFrame: (Image, Long) -> Unit) {
+    private fun decode(
+        file: File,
+        onFrame: (Image, Long) -> Unit,
+        onDecodeProgress: ((Int) -> Unit)? = null
+    ) {
         val src = Source(file)
-        val mime = src.format.getString(MediaFormat.KEY_MIME)!!
+        val mime = src.format.getString(MediaFormat.KEY_MIME) ?: throw PostException("no mime in format")
+        val durationUs = if (src.format.containsKey(MediaFormat.KEY_DURATION)) src.format.getLong(MediaFormat.KEY_DURATION) else 0L
         val codec = MediaCodec.createDecoderByType(mime)
         try {
             src.format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
@@ -99,6 +113,7 @@ object OnDevicePost {
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
+            var frameCount = 0
             while (!outputDone) {
                 if (!inputDone) {
                     val i = codec.dequeueInputBuffer(TIMEOUT_US)
@@ -116,9 +131,20 @@ object OnDevicePost {
                 }
                 val o = codec.dequeueOutputBuffer(info, TIMEOUT_US)
                 if (o >= 0) {
-                    if (info.size > 0) {
-                        val image = codec.getOutputImage(o)
-                        if (image != null) { onFrame(image, info.presentationTimeUs); image.close() }
+                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                        val image = try { codec.getOutputImage(o) } catch (_: Exception) { null }
+                        if (image != null) {
+                            try {
+                                onFrame(image, info.presentationTimeUs)
+                                frameCount++
+                                if (durationUs > 0 && frameCount % 10 == 0) {
+                                    val pct = (100L * info.presentationTimeUs / durationUs).toInt().coerceIn(0, 100)
+                                    onDecodeProgress?.invoke(pct)
+                                }
+                            } finally {
+                                try { image.close() } catch (_: Exception) {}
+                            }
+                        }
                     }
                     codec.releaseOutputBuffer(o, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
@@ -131,7 +157,13 @@ object OnDevicePost {
         }
     }
 
-    private fun encodeWithGains(srcFile: File, dstFile: File, gains: DoubleArray, lineRateHz: Double, onProgress: (Int) -> Unit) {
+    private fun encodeWithGains(
+        srcFile: File,
+        dstFile: File,
+        gains: DoubleArray,
+        lineRateHz: Double,
+        onProgress: (Int) -> Unit
+    ) {
         val rotation = MediaMetadataRetriever().use { r ->
             r.setDataSource(srcFile.path)
             r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
@@ -153,12 +185,16 @@ object OnDevicePost {
         var frame = 0
         val info = MediaCodec.BufferInfo()
 
+        var eosRetries = 0
         fun drain(endOfStream: Boolean) {
             val enc = encoder ?: return
             while (true) {
                 val o = enc.dequeueOutputBuffer(info, if (endOfStream) TIMEOUT_US else 0)
                 when {
-                    o == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream) return
+                    o == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        if (!endOfStream) return
+                        if (++eosRetries > 100) return
+                    }
                     o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         track = muxer!!.addTrack(enc.outputFormat)
                         audioFormat?.let { audioTrackOut = muxer!!.addTrack(it) }
@@ -179,16 +215,15 @@ object OnDevicePost {
         }
 
         try {
-            decode(srcFile) { image, pts ->
+            decode(srcFile, onFrame = { image, pts ->
                 if (encoder == null) {
                     val w = image.width and 1.inv()
                     val h = image.height and 1.inv()
                     val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
                         setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-                        setInteger(MediaFormat.KEY_BIT_RATE, 17_000_000)
+                        setInteger(MediaFormat.KEY_BIT_RATE, 20_000_000)
                         setInteger(MediaFormat.KEY_FRAME_RATE, 30)
                         setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                        // No B-frames: the muxer takes the input timestamps as decode timestamps.
                         if (android.os.Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
                     }
                     encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also {
@@ -200,15 +235,18 @@ object OnDevicePost {
                     }
                 }
                 val enc = encoder!!
-                var idx = enc.dequeueInputBuffer(-1)
-                while (idx < 0) { drain(false); idx = enc.dequeueInputBuffer(TIMEOUT_US) }
+                var idx = enc.dequeueInputBuffer(TIMEOUT_US)
+                while (idx < 0) {
+                    drain(false)
+                    idx = enc.dequeueInputBuffer(TIMEOUT_US)
+                }
                 val dst = enc.getInputImage(idx) ?: throw PostException("encoder gives no input image")
                 val g = gains.getOrElse(frame) { 1.0 }
 
                 val rowGains: DoubleArray? = if (lineRateHz > 0.0) {
                     val p0 = image.planes[0]
                     val prof = NsJni.extractProfile(p0.buffer, image.width, image.height, p0.rowStride, p0.pixelStride)
-                    NsJni.rowGain(prof, lineRateHz)
+                    NsJni.rowGain(prof, lineRateHz)?.takeIf { it.isNotEmpty() }
                 } else null
 
                 copyPlane(image.planes[0], image.width, image.height, dst.planes[0], dst.width, dst.height, g, rowGains)
@@ -218,11 +256,16 @@ object OnDevicePost {
                 dst.close()
                 enc.queueInputBuffer(idx, 0, size, pts, 0)
                 frame++
-                if (frame % 10 == 0) onProgress(100 * frame / gains.size)
+                if (frame % 5 == 0) onProgress(100 * frame / gains.size)
                 drain(false)
-            }
+            })
+
             val enc = encoder ?: throw PostException("no frames to encode")
-            val eos = enc.dequeueInputBuffer(-1)
+            var eos = enc.dequeueInputBuffer(TIMEOUT_US)
+            while (eos < 0) {
+                drain(false)
+                eos = enc.dequeueInputBuffer(TIMEOUT_US)
+            }
             enc.queueInputBuffer(eos, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             drain(true)
             if (audioFormat != null && audioTrackOut >= 0 && muxerStarted) {

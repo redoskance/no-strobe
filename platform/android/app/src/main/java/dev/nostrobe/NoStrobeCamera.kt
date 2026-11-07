@@ -566,6 +566,10 @@ class NoStrobeCamera(
         autoOnly = true
         val cb = object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(s: CameraCaptureSession) {
+                if (stopped) {
+                    try { s.close() } catch (_: Exception) {}
+                    return
+                }
                 session = s
                 val hs = s as? CameraConstrainedHighSpeedCaptureSession
                 if (hs == null) { createSession(d, fallbackSurfaces, 2); return }
@@ -649,8 +653,17 @@ class NoStrobeCamera(
         builder = b
         val callback = object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(s: CameraCaptureSession) {
+                if (stopped) {
+                    try { s.close() } catch (_: Exception) {}
+                    return
+                }
                 session = s
-                s.setRepeatingRequest(b.build(), resultCallback, handler)
+                try {
+                    s.setRepeatingRequest(b.build(), resultCallback, handler)
+                } catch (e: Exception) {
+                    Log.w(TAG, "session setRepeatingRequest failed: ${e.message}")
+                    return
+                }
                 if (recorder == null) {
                     if (level < 3) onReady()
                 } else {

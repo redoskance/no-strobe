@@ -1,6 +1,7 @@
 package dev.nostrobe
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCharacteristics
@@ -60,8 +61,9 @@ class MainActivity : AppCompatActivity() {
     private var layoutPortrait = true
     private var relayoutAfterRecording = false
     private var timerSecs = 0
-    // The last clip recorded (in the cache) and the row rate it was shot with.
+    // The last clip recorded and the row rate it was shot with.
     private var lastClip: File? = null
+    private var currentRecordingFile: File? = null
     private var lastRowRate = 0.0
     private var recFps = 30
     private var hsFps = 0  // > 0 while recording at a high-speed rate chosen from the locked frequency
@@ -224,7 +226,19 @@ class MainActivity : AppCompatActivity() {
         zoomText = findViewById(R.id.zoomText)
         flipButton.setOnClickListener { flipCamera() }
         postButton = findViewById(R.id.post)
-        postButton.setOnClickListener { showPostMenu() }
+        postButton.setOnClickListener { openGallery() }
+        postButton.setOnLongClickListener {
+            showPostMenu()
+            true
+        }
+        val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips")
+        val moviesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "no-strobe")
+        val hasClips = (clipsDir.exists() && clipsDir.listFiles { f -> f.extension.equals("mp4", ignoreCase = true) }?.isNotEmpty() == true) ||
+                       (moviesDir.exists() && moviesDir.listFiles { f -> f.extension.equals("mp4", ignoreCase = true) }?.isNotEmpty() == true)
+        if (hasClips) {
+            postButton.visibility = android.view.View.VISIBLE
+            postButton.text = "galerie"
+        }
         exposureBar = findViewById(R.id.exposureBar)
         exposureText = findViewById(R.id.exposureText)
         exposureBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -522,11 +536,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectLens(index: Int) {
         if (index == lensIndex || index !in lensOptions.indices) return
+        val option = lensOptions[index]
+        if (recorder != null) {
+            val current = lensOptions.getOrNull(lensIndex)
+            val isCurrentFront = current?.label?.startsWith("front") == true
+            val isTargetFront = option.label.startsWith("front")
+            if (isCurrentFront != isTargetFront || current?.logicalId != option.logicalId) {
+                Toast.makeText(this, "Impossible de changer de capteur pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                return
+            }
+            // Same logical camera (back lenses 0.5x, 1x, 5x, auto): switch smoothly via zoom without restarting
+            lensIndex = index
+            zoomRatio = logicalZoomFor(option)
+            if (zoomMax > zoomMin) {
+                zoomBar.progress = (100f * ln(zoomRatio / zoomMin) / ln(zoomMax / zoomMin)).toInt().coerceIn(0, 100)
+            }
+            zoomText.text = "%.1fx".format(zoomRatio)
+            camera?.setZoom(zoomRatio)
+            refreshLensChips()
+            return
+        }
         lensIndex = index
         zoomRatio = 1f
         camera?.stop()
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
-        val option = lensOptions[lensIndex]
         val pSize = selectPreviewSize(manager, option.logicalId)
         if (pSize != currentPreviewSize) {
             currentPreviewSize = pSize
@@ -541,6 +574,10 @@ class MainActivity : AppCompatActivity() {
     private var lastBackIndex = -1
     private fun flipCamera() {
         if (lensOptions.isEmpty()) return
+        if (recorder != null) {
+            Toast.makeText(this, "Impossible de changer de caméra pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+            return
+        }
         val isFront = lensOptions[lensIndex].label.startsWith("front")
         if (isFront) {
             selectLens(if (lastBackIndex in lensOptions.indices) lastBackIndex else LensOptions.defaultIndex(lensOptions))
@@ -601,6 +638,12 @@ class MainActivity : AppCompatActivity() {
             recorder?.release(); recorder = null
             hsFps = 0
             recordButton.isSelected = false
+            flipButton.isEnabled = true
+            flipButton.alpha = 1.0f
+            micButton.isEnabled = true
+            micButton.alpha = 1.0f
+            timerButton.isEnabled = true
+            timerButton.alpha = 1.0f
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             finishClip()
             notifyPost(total, locked)
@@ -667,9 +710,20 @@ class MainActivity : AppCompatActivity() {
             r.setAudioSamplingRate(44_100)
         }
         r.setOrientationHint(sensorOrientation())
-        r.setOutputFile(File(externalCacheDir ?: cacheDir, "clip.mp4").path)
+        val timestamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+        val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+        val clipsDir = File(dir, "clips").apply { mkdirs() }
+        val clipFile = File(clipsDir, "nostrobe-$timestamp.mp4")
+        currentRecordingFile = clipFile
+        r.setOutputFile(clipFile.path)
         r.prepare()
         recorder = r
+        flipButton.isEnabled = false
+        flipButton.alpha = 0.4f
+        micButton.isEnabled = false
+        micButton.alpha = 0.4f
+        timerButton.isEnabled = false
+        timerButton.alpha = 0.4f
         // The activity survives rotation (configChanges in the manifest), so the recording is
         // not cut; the clip's orientation hint is read from the screen at this point.
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED
@@ -690,17 +744,17 @@ class MainActivity : AppCompatActivity() {
 
     /** The clip is in the cache; copy it to Movies/no-strobe so the gallery sees it. */
     private fun finishClip() {
-        val clip = File(externalCacheDir ?: cacheDir, "clip.mp4")
+        val clip = currentRecordingFile ?: File(externalCacheDir ?: cacheDir, "clip.mp4")
         if (!clip.exists() || clip.length() == 0L) return
         lastClip = clip
         postButton.visibility = android.view.View.VISIBLE
-        val name = "nostrobe-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-            .format(java.util.Date()) + ".mp4"
+        postButton.text = "galerie"
+        val name = clip.name
         Thread {
             val where = saveToGallery(clip, name)
             runOnUiThread {
-                Toast.makeText(this, if (where != null) "Saved: $where" else "Could not save the clip to the gallery",
-                    Toast.LENGTH_LONG).show()
+                Toast.makeText(this, if (where != null) "Vidéo enregistrée dans $where" else "Vidéo enregistrée",
+                    Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -767,14 +821,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun prefs() = getSharedPreferences("nostrobe", MODE_PRIVATE)
 
+    private fun openGallery(clip: File? = lastClip) {
+        val intent = Intent(this, GalleryActivity::class.java).apply {
+            clip?.let { putExtra("clip_path", it.absolutePath) }
+            putExtra("line_rate", if (lastRowRate > 0.0) lastRowRate else (camera?.rowRateHz ?: 0.0))
+        }
+        startActivity(intent)
+    }
+
     private fun showPostMenu() {
-        val items = arrayOf("Fix on this phone", "Send to the desktop and fix", "Desktop server settings")
+        val items = arrayOf(
+            "Galerie rapide Avant / Après",
+            "Post-traiter sur ce téléphone (Local)",
+            "Envoyer au serveur desktop",
+            "Paramètres serveur desktop"
+        )
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Post-process the last clip")
+            .setTitle("Post-traitement / Galerie")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> fixOnPhone()
-                    1 -> sendToDesktop()
+                    0 -> openGallery()
+                    1 -> fixOnPhone()
+                    2 -> sendToDesktop()
                     else -> showServerSettings()
                 }
             }
@@ -810,36 +878,36 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /** Brightness-pumping fix on the phone itself (no network); slower than the desktop. */
+    /** Brightness-pumping and anti-banding fix on the phone itself (no network). */
     private fun fixOnPhone() {
         val clip = lastClip
-        if (clip == null || !clip.exists()) {
-            Toast.makeText(this, "No clip to process yet.", Toast.LENGTH_SHORT).show(); return
+        if (clip == null || !clip.exists() || clip.length() == 0L) {
+            Toast.makeText(this, "Aucun clip valide à traiter.", Toast.LENGTH_SHORT).show(); return
         }
-        val out = File(clip.parentFile, "clip-fixed.mp4")
+        val out = File(clip.parentFile, clip.nameWithoutExtension + "-fixed.mp4")
         postButton.isEnabled = false
         Thread {
             try {
                 val t0 = System.currentTimeMillis()
                 android.util.Log.i("nostrobe", "phone post: start (${clip.length()} bytes)")
-                val lr = camera?.rowRateHz ?: 0.0
+                val lr = if (lastRowRate > 0.0) lastRowRate else (camera?.rowRateHz ?: 0.0)
                 OnDevicePost.fix(clip, out, lr) { pct ->
-                    runOnUiThread { status.text = "post-processing on the phone: $pct %" }
+                    runOnUiThread { status.text = "post-traitement local: $pct %" }
                 }
-                val name = "nostrobe-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-                    .format(java.util.Date()) + "-fixed.mp4"
+                val fixedName = out.name
                 android.util.Log.i("nostrobe", "phone post: done in ${System.currentTimeMillis() - t0} ms, ${out.length()} bytes")
-                val where = saveToGallery(out, name)
+                val where = saveToGallery(out, fixedName)
                 runOnUiThread {
-                    status.text = "post-processing done in ${(System.currentTimeMillis() - t0) / 1000} s"
-                    Toast.makeText(this, if (where != null) "Fixed clip saved: $where" else "Fixed clip ready",
+                    status.text = "post-traitement terminé en ${(System.currentTimeMillis() - t0) / 1000} s"
+                    Toast.makeText(this, if (where != null) "Clip corrigé: $where" else "Clip corrigé prêt",
                         Toast.LENGTH_LONG).show()
+                    openGallery(clip)
                 }
             } catch (e: Exception) {
                 android.util.Log.w("nostrobe", "phone post failed: ${e.javaClass.simpleName}: ${e.message}")
                 runOnUiThread {
-                    status.text = "post-processing failed"
-                    Toast.makeText(this, "Post-processing failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    status.text = "échec du post-traitement"
+                    Toast.makeText(this, "Échec du post-traitement: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             } finally {
                 runOnUiThread { postButton.isEnabled = true }

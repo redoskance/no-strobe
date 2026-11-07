@@ -218,11 +218,11 @@
                 android:background="@drawable/bg_tool"
                 android:clickable="true"
                 android:drawableTint="@color/icon_tint"
-                android:drawableTop="@drawable/ic_post"
+                android:drawableTop="@drawable/ic_gallery"
                 android:focusable="true"
                 android:gravity="center_horizontal"
                 android:paddingTop="8dp"
-                android:text="post"
+                android:text="galerie"
                 android:textColor="@color/icon_tint"
                 android:textSize="10sp"
                 android:visibility="gone" />

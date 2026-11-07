@@ -42,6 +42,7 @@ jobs:
 
   # The Apps: Android APK (with native library for both ABIs) and desktop post-processing tool.
   apps:
+    needs: [core, kotlin-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,44 +93,23 @@ jobs:
           files: |
             platform/android/app/build/outputs/apk/debug/app-debug.apk
             target/release/no-strobe-post
-      - name: Publish tag release
+      # Tag releases are created by the tag-release job (one draft), not here.
+      - name: Keep the APK for the tag release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body_path: RELEASE_NOTES.md
-          prerelease: false
-          draft: false
-          files: |
-            platform/android/app/build/outputs/apk/debug/app-debug.apk
-            target/release/no-strobe-post
-      - name: Update v0.2 release metadata and body
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
-        run: |
-          REL_ID=$(gh api repos/${{ github.repository }}/releases/tags/v0.2 --jq .id || true)
-          if [ -n "$REL_ID" ]; then
-            gh api -X PATCH repos/${{ github.repository }}/releases/$REL_ID \
-              -f name="v0.2: Video & Photo Modes, On-Device Post & LAN Offload" \
-              -F body=@RELEASE_NOTES.md
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish v0.2 release
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
-        uses: softprops/action-gh-release@v2
+          name: app-debug-apk
+          path: platform/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Keep the desktop tool for the tag release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v0.2
-          name: "v0.2: Video & Photo Modes, On-Device Post & LAN Offload"
-          body_path: RELEASE_NOTES.md
-          prerelease: false
-          draft: false
-          files: |
-            platform/android/app/build/outputs/apk/debug/app-debug.apk
-            target/release/no-strobe-post
+          name: no-strobe-post
+          path: target/release/no-strobe-post
 
   # Mockup CI for iOS App: runs selection simulation tests, generates Xcode project, and builds Simulator .app
   ios:
+    needs: [core, kotlin-tests, apps]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -179,15 +159,27 @@ jobs:
           name: Nightly build
           prerelease: true
           files: build/ios/AntiStrobe-Simulator.app.zip
-      - name: Publish to Tag Release
-        if: startsWith(github.ref, 'refs/tags/v')
+
+  # The only job that creates a tag release. It waits for the APK and the iOS zip, and creates
+  # the release as a DRAFT: check the assets, then publish it by hand.
+  tag-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [apps, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Create the draft tag release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: build/ios/AntiStrobe-Simulator.app.zip
-      - name: Publish to v0.2 Release
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.2
-          files: build/ios/AntiStrobe-Simulator.app.zip
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          prerelease: false
+          draft: true
+          files: |
+            dist/app-debug-apk/app-debug.apk
+            dist/no-strobe-post/no-strobe-post
+            dist/ios-mockup-app/AntiStrobe-Simulator.app.zip

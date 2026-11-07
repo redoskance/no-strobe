@@ -133,7 +133,6 @@ Idées et chantiers ouverts, du plus utile au moins urgent dans chaque groupe. P
 **Android et interface**
 - [ ] Vraie correction en direct dans la vidéo : le MediaRecorder encode le flux tel quel et le verrouillage n'agit qu'en boucle ouverte. Piste : un encodeur MediaCodec alimenté par les images corrigées.
 - [ ] Chaînes de l'interface écrites en dur en français dans le code : les passer dans `strings.xml` (FR et EN).
-- [ ] `usesCleartextTraffic="true"` : le restreindre au réseau local (network security config) pour le déport LAN.
 - [ ] Un scénario `adb` automatisé (démarrage à froid, photo, vidéo, rotation) sur des émulateurs (API 30, 34, tablette), dans le CI.
 
 **Signature et publication**
@@ -255,7 +254,6 @@ Open ideas and tasks, most useful first within each group. Pick one, open an iss
 **Android and interface**
 - [ ] Real live correction in the video: MediaRecorder encodes the stream as is and the lock only acts open loop. Idea: a MediaCodec encoder fed with corrected frames.
 - [ ] Interface strings are hard-coded in French in the code: move them to `strings.xml` (FR and EN).
-- [ ] `usesCleartextTraffic="true"`: restrict it to the local network (network security config) for the LAN offload.
 - [ ] An automated `adb` scenario (cold start, photo, video, rotation) on emulators (API 30, 34, tablet) in CI.
 
 **Signing and publishing**

@@ -21,6 +21,7 @@ object DesktopPost {
         onProgress: (Int) -> Unit,
     ) {
         val root = base.trim().trimEnd('/').let { if (it.contains("://")) it else "http://$it" }
+        if (!LanPolicy.allowed(root)) throw PostException("HTTP is only used towards the local network: $root")
         // Download to a temp name (distinct from the local post's) and rename on success.
         val tmp = File(out.path + ".lan.part")
         val conn = URL("$root/fix?line_rate=${"%.0f".format(java.util.Locale.US, lineRateHz)}")

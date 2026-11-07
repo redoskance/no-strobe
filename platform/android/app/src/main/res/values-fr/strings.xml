@@ -77,6 +77,7 @@
     <string name="lan_err_conn_refused">Connexion refusée : vérifiez que no-strobe-post tourne sur le port</string>
     <string name="lan_err_timeout">Délai dépassé : l\'hôte ne répond pas</string>
     <string name="lan_err_unknown_host">Hôte inconnu : vérifiez l\'adresse IP</string>
+    <string name="lan_err_http_not_local">HTTP n\'est permis que vers le réseau local (192.168.x.x, 10.x.x.x, .local…) : utilisez https pour une autre adresse</string>
     <string name="lan_err_generic_format">Erreur : %s</string>
     <string name="lan_complete">Correction sur serveur LAN terminée !</string>
     <string name="lan_error_format">Erreur serveur LAN: %s</string>

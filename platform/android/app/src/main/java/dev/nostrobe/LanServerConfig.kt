@@ -46,6 +46,10 @@ object LanServerConfig {
             if (!urlStr.contains("://")) {
                 urlStr = "http://$urlStr"
             }
+            if (!LanPolicy.allowed(urlStr)) {
+                onResult(false, context.getString(R.string.lan_err_http_not_local))
+                return@thread
+            }
             try {
                 // First try GET /health, fall back to /fix
                 val testUrl = URL("$urlStr/health")

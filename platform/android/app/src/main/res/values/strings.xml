@@ -77,6 +77,7 @@
     <string name="lan_err_conn_refused">Connection refused: verify that no-strobe-post is running on this port</string>
     <string name="lan_err_timeout">Timed out: host not responding</string>
     <string name="lan_err_unknown_host">Unknown host: verify IP address</string>
+    <string name="lan_err_http_not_local">HTTP is only allowed towards the local network (192.168.x.x, 10.x.x.x, .local…): use https for another address</string>
     <string name="lan_err_generic_format">Error: %s</string>
     <string name="lan_complete">LAN server post-processing complete!</string>
     <string name="lan_error_format">LAN server error: %s</string>

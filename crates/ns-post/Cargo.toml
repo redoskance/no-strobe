@@ -2,6 +2,7 @@
 name = "ns-post"
 version = "0.2.0"
 edition = "2021"
+license = "WTFPL"
 description = "Desktop post-processing of no-strobe clips: fix a file, or serve /fix for the phone to offload to"
 
 [[bin]]

@@ -127,6 +127,10 @@ target/release/no-strobe-post serve --listen 0.0.0.0:8765
 
 Consultez [`CONTRIBUTING.md`](CONTRIBUTING.md) pour les conventions de code, la signature GPG des commits et les directives de test.
 
+### Licence
+
+Ce projet est publié sous la licence WTFPL (*Do What The Fuck You Want To Public License*, version 2). Voir [`LICENSE`](LICENSE).
+
 ---
 
 <br/>
@@ -270,3 +274,7 @@ target/release/no-strobe-post serve --listen 0.0.0.0:8765
 ### Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for branch guidelines, GPG signing requirements, and testing guidelines.
+
+### License
+
+This project is released under the WTFPL (*Do What The Fuck You Want To Public License*, version 2). See [`LICENSE`](LICENSE).

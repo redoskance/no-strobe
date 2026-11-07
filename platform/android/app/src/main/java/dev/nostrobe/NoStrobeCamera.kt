@@ -142,10 +142,9 @@ class NoStrobeCamera(
 
     /** (exposure us, frequency Hz) of a lock seen in the last seconds, else (0, 0). A status of
      *  "search" is interleaved with "locked" during re-checks, so the instant is not enough.
-     *  A GAP or FLASH lock is a window at a fixed phase of the light: a reopened session runs on the
-     *  sensor's own clock and loses that phase, so such a lock is not carried. */
+     *  Carries PWM and GAP locks into recording so the shutter timing stays locked during capture. */
     fun carryLock(): Triple<Double, Double, Double> =
-        if (lockHz > 0.0 && lockMode != NsJni.MODE_GAP && lockMode != NsJni.MODE_FLASH &&
+        if (lockHz > 0.0 && lockMode != NsJni.MODE_FLASH &&
             SystemClock.elapsedRealtime() - lockAtMs < LOCK_GRACE_MS) Triple(lockExposureUs, lockHz, lockFps)
         else Triple(0.0, 0.0, 0.0)
 
@@ -877,10 +876,11 @@ class NoStrobeCamera(
     private fun applySeededHighSpeed(hs: CameraConstrainedHighSpeedCaptureSession) {
         val b = builder ?: return
         if (stopped || seedHz <= 0.0) return
-        val (k, e) = HighSpeedPick.exposureFor(1e6 / highSpeedFps, seedHz)
+        val (k, e) = HighSpeedPick.exposureFor(1e6 / highSpeedFps, seedHz, !pwmMode)
         val budget = if (budgetUsIso > 0.0) budgetUsIso else latestAutoBudget
         val iso = if (budget > 0.0) (budget * Math.pow(2.0, evBias.toDouble()) / e).coerceIn(isoMin, isoMax) else isoMin
-        val cmd = NsCommand(e, highSpeedFps.toDouble(), iso, NsJni.MODE_PWM, NsJni.STATE_LOCKED, 1e6 / seedHz, 0.8, 0.0, seedHz)
+        val mode = if (pwmMode) NsJni.MODE_PWM else NsJni.MODE_GAP
+        val cmd = NsCommand(e, highSpeedFps.toDouble(), iso, mode, NsJni.STATE_LOCKED, 1e6 / seedHz, 0.8, 0.0, seedHz)
         Camera2Sync.apply(b, cmd)
         b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, android.util.Range(highSpeedFps, highSpeedFps))
         requestedExposureNs = (e * 1000.0).toLong()
@@ -1007,7 +1007,8 @@ class NoStrobeCamera(
         val iso = if (budget > 0.0) {
             (budget * Math.pow(2.0, evBias.toDouble()) / seedExposureUs).coerceIn(isoMin, isoMax)
         } else isoMin
-        val cmd = NsCommand(seedExposureUs, recordFps.toDouble(), iso, NsJni.MODE_PWM, NsJni.STATE_LOCKED,
+        val mode = if (pwmMode) NsJni.MODE_PWM else NsJni.MODE_GAP
+        val cmd = NsCommand(seedExposureUs, recordFps.toDouble(), iso, mode, NsJni.STATE_LOCKED,
             1e6 / seedHz, 0.8, 0.0, seedHz)
         Camera2Sync.apply(b, cmd)
         applyZoom(b)

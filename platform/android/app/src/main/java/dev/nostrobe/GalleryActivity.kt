@@ -237,6 +237,12 @@ class GalleryActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        loadMedia(intent?.getStringExtra("clip_path"))
+    }
+
     override fun onDestroy() {
         currentPhotoBitmap?.recycle()
         currentPhotoBitmap = null

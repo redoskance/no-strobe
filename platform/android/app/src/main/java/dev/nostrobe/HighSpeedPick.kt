@@ -22,6 +22,10 @@ object HighSpeedPick {
      *
      * Confidence check: High-speed recording runs open-loop (no analysis stream during recording),
      * so it requires high lock confidence (`confidence >= minConfidence`, default 0.75).
+     *
+     * Strobe mode (`isStrobe` or `hz < 60 Hz`): In slow strobe mode, higher frame rates (120/240 fps)
+     * provide short exposure windows and dense sampling per cycle, isolating the dark interval
+     * between flashes so that flashed frames can be cleanly dropped.
      */
     fun pick(
         ranges: List<FpsRange>,
@@ -31,14 +35,23 @@ object HighSpeedPick {
         budgetUsIso: Double = 0.0,
         maxIso: Double = 3200.0,
         minConfidence: Double = 0.75,
-        confidence: Double = 1.0
+        confidence: Double = 1.0,
+        isStrobe: Boolean = false,
     ): Triple<Int, Int, Int>? {
         if (confidence < minConfidence) return null
-        val fixed = ranges.filter { it.lower == it.upper && it.upper >= 100 && it.upper <= 0.9 * hz }
-            .sortedByDescending { it.upper }
+        val strobeRegime = isStrobe || (hz in 1.0..60.0)
+        val fixed = if (strobeRegime) {
+            // For slow strobes: higher frame rates isolate the dark gap between flashes
+            ranges.filter { it.lower == it.upper && it.upper >= 100 }
+                .sortedByDescending { it.upper }
+        } else {
+            // In PWM mode: Paul's rule (frame duration >= 1 flicker cycle, so rate <= 0.9 * hz).
+            ranges.filter { it.lower == it.upper && it.upper >= 100 && it.upper <= 0.9 * hz }
+                .sortedByDescending { it.upper }
+        }
         for (r in fixed) {
             if (budgetUsIso > 0.0 && maxIso > 0.0) {
-                val (_, expUs) = exposureFor(1e6 / r.upper, hz)
+                val (_, expUs) = exposureFor(1e6 / r.upper, hz, strobeRegime)
                 if (expUs > 0.0) {
                     val reqIso = budgetUsIso / expUs
                     if (reqIso > maxIso) {
@@ -55,10 +68,16 @@ object HighSpeedPick {
     }
 
     /**
-     * The longest exposure that is a whole number of flicker periods and fits the frame:
+     * For PWM (strobeRegime=false): The longest exposure that is a whole number of flicker periods and fits the frame:
      * `k = floor(0.9 x frame time x f)`, `e = k / f` microseconds.
+     * For Strobe (strobeRegime=true): The exposure fits inside the frame time to keep the shutter short:
+     * `e = 0.9 x frame time`.
      */
-    fun exposureFor(frameUs: Double, hz: Double): Pair<Double, Double> {
+    fun exposureFor(frameUs: Double, hz: Double, isStrobe: Boolean = false): Pair<Double, Double> {
+        if (isStrobe || (hz in 1.0..60.0)) {
+            val e = (0.9 * frameUs).coerceAtLeast(100.0)
+            return 1.0 to e
+        }
         val k = kotlin.math.floor(0.9 * frameUs * hz / 1e6).coerceAtLeast(1.0)
         return k to k * 1e6 / hz
     }

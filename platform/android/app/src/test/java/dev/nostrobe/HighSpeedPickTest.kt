@@ -119,4 +119,21 @@ class HighSpeedPickTest {
         assertEquals(30, HighSpeedPick.playbackFps(120, slowMo = true))
         assertEquals(30, HighSpeedPick.playbackFps(60, slowMo = true))
     }
+
+    @Test fun strobeAllowsHighSpeedAtLowFrequency() {
+        // In strobe mode (isStrobe = true or hz in 1..60), high-speed rates are allowed to isolate dark gap.
+        val strobePicked = HighSpeedPick.pick(
+            ranges, { r -> sizes[r] ?: emptyList() }, 10.0,
+            isStrobe = true
+        )
+        assertEquals(Triple(240, 1920, 1080), strobePicked)
+    }
+
+    @Test fun strobeExposureFitsInsideFrameTime() {
+        // At 240 fps (frameUs = 4166.7 us), 10 Hz strobe:
+        // Strobe exposure is 0.9 * frameUs = 3750 us, leaving a 10% safety margin per frame
+        val (k, expUs) = HighSpeedPick.exposureFor(1e6 / 240.0, 10.0, isStrobe = true)
+        assertEquals(1.0, k, 1e-6)
+        assertEquals(3750.0, expUs, 1.0)
+    }
 }

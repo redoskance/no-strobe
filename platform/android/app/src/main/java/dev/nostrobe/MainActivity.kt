@@ -451,6 +451,15 @@ class MainActivity : AppCompatActivity() {
         ) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 1)
         }
+
+        val postClipPath = intent.getStringExtra("post_clip")
+        if (!postClipPath.isNullOrBlank()) {
+            val f = File(postClipPath)
+            if (f.exists()) {
+                lastClip = f
+                fixOnPhone()
+            }
+        }
     }
 
     /** The manifest keeps the activity alive on fold/rotation, so the layout has to be inflated again by hand. */
@@ -574,7 +583,7 @@ class MainActivity : AppCompatActivity() {
             },
             outDir = externalCacheDir ?: cacheDir,
             highSpeedFps = if (recorder != null) hsFps else 0,
-            startLevel = if (recorder != null) 2 else if (debugBuild) intent.getIntExtra("session_level", 0) else 0,
+            startLevel = if (recorder != null && hsFps > 0) 2 else if (debugBuild) intent.getIntExtra("session_level", 0) else 0,
             recordFps = recFps,
             onReady = {
                 // Session configured with the recorder surface: start recording now.
@@ -792,7 +801,8 @@ class MainActivity : AppCompatActivity() {
             budgetUsIso = budget,
             maxIso = 3200.0,
             minConfidence = 0.75,
-            confidence = confidence
+            confidence = confidence,
+            isStrobe = strobeModeOn || hz < 60.0
         )
     }
 

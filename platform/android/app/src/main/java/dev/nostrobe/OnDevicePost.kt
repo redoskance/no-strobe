@@ -27,6 +27,15 @@ object OnDevicePost {
 
     class PostException(message: String) : Exception(message)
 
+    data class DecimationPlan(
+        val isStrobeDecimated: Boolean,
+        val outputFps: Int,
+        val flashCount: Int,
+        val darkCount: Int,
+        val selectedSourceIndices: IntArray,
+        val gains: DoubleArray,
+    )
+
     @Volatile
     var isProcessing: Boolean = false
         private set
@@ -54,14 +63,47 @@ object OnDevicePost {
         val tmp = File(dst.path + ".local.part")
         try {
             val means = ArrayList<Double>()
-            // Pass 1: measure luma per frame (0% - 30% progress)
-            decode(src, onFrame = { image, _ -> means.add(meanLuma(image)) }, onDecodeProgress = { pct ->
+            val timestampsUs = ArrayList<Long>()
+            // Pass 1: measure luma per frame and collect timestamps (0% - 30% progress)
+            decode(src, onFrame = { image, pts ->
+                means.add(meanLuma(image))
+                timestampsUs.add(pts)
+            }, onDecodeProgress = { pct ->
                 onProgress((pct * 0.3).toInt())
             })
             if (means.isEmpty()) throw PostException("no frames decoded")
-            val gains = temporalGainAdaptive(means.toDoubleArray(), WINDOW, MAX_GAIN, 0.25)
+
+            // Determine source framerate from metadata
+            val r = MediaMetadataRetriever()
+            var srcFps = 30
+            var captureRate = 0.0
+            try {
+                r.setDataSource(src.path)
+                captureRate = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull() ?: 0.0
+                val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
+                val count = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toDoubleOrNull() ?: 0.0
+                val measuredFps = if (durMs > 0.0 && count > 0.0) count * 1000.0 / durMs else null
+                srcFps = measuredFps?.roundToInt()?.coerceIn(15, 240) ?: 30
+            } catch (_: Exception) {
+            } finally {
+                r.release()
+            }
+
+            val effectiveRate = if (captureRate >= 100.0) captureRate.toInt() else srcFps
+            val plan = planDarkGapDecimation(
+                means.toDoubleArray(),
+                timestampsUs.toLongArray(),
+                srcFps = effectiveRate
+            )
+
+            if (plan.isStrobeDecimated) {
+                android.util.Log.i("nostrobe", "OnDevicePost: Strobe detected! Dropping %d flashed frames, keeping %d dark-gap frames (output %d fps)".format(
+                    plan.flashCount, plan.darkCount, plan.outputFps
+                ))
+            }
+
             // Pass 2: apply gains and encode (30% - 100% progress)
-            encodeWithGains(src, tmp, gains, lineRateHz) { pct ->
+            encodeWithGains(src, tmp, plan, lineRateHz) { pct ->
                 onProgress(30 + (pct * 0.7).toInt())
             }
             dst.delete()
@@ -74,6 +116,216 @@ object OnDevicePost {
                 isProcessing = false
                 listeners.forEach { it(false) }
             }
+        }
+    }
+
+    /**
+     * Dark gap decimation and flash elimination for strobe scenes:
+     * In a strobe scene (e.g. 1-60 Hz), flashes are brief high-luma pulses separated by dark intervals
+     * representing the actual scene. This planner identifies flash pulses and builds an index map
+     * selecting only dark-gap frames:
+     * - High-speed captures (120/240 fps) are decimated to clean 60 fps (or 30 fps slow-mo) using
+     *   exclusively dark-gap frames.
+     * - Standard rate captures (30/60 fps) replace flashed frames with the nearest dark-gap frame.
+     * If no strobe is detected, all original frames are preserved.
+     */
+    fun planDarkGapDecimation(
+        means: DoubleArray,
+        timestampsUs: LongArray,
+        srcFps: Int,
+        slowMo: Boolean = false,
+    ): DecimationPlan {
+        val n = means.size
+        if (n == 0) {
+            return DecimationPlan(
+                isStrobeDecimated = false,
+                outputFps = 30,
+                flashCount = 0,
+                darkCount = 0,
+                selectedSourceIndices = IntArray(0),
+                gains = DoubleArray(0),
+            )
+        }
+        val safeFps = srcFps.coerceIn(15, 240)
+        if (n < 10) {
+            val outFps = safeFps.coerceIn(15, 60)
+            return DecimationPlan(
+                isStrobeDecimated = false,
+                outputFps = outFps,
+                flashCount = 0,
+                darkCount = n,
+                selectedSourceIndices = IntArray(n) { it },
+                gains = temporalGainAdaptive(means, WINDOW, MAX_GAIN, 0.25),
+            )
+        }
+
+        // Window size for local background estimation (around 1 second of frames, clamped between 15 and 60)
+        val w = safeFps.coerceIn(15, 60)
+        val halfW = w / 2
+
+        // Compute local dark baseline and flash threshold per frame
+        val isFlashCandidate = BooleanArray(n)
+        for (i in 0 until n) {
+            val lo = maxOf(0, i - halfW)
+            val hi = minOf(n, i + halfW + 1)
+            val winSize = hi - lo
+            val winVals = DoubleArray(winSize)
+            for (j in 0 until winSize) winVals[j] = means[lo + j]
+            winVals.sort()
+
+            // In strobe scenes, dark gap is the majority (> 60% of time).
+            // p25 and p50 reliably reflect the ambient dark-gap level.
+            val p25 = winVals[(winSize * 0.25).toInt().coerceIn(0, winSize - 1)]
+            val p50 = winVals[(winSize * 0.50).toInt().coerceIn(0, winSize - 1)]
+
+            // Measure spread among dark frames (lower half)
+            var darkSpreadSum = 0.0
+            var darkCountWin = 0
+            for (v in winVals) {
+                if (v <= p50) {
+                    darkSpreadSum += Math.abs(v - p25)
+                    darkCountWin++
+                }
+            }
+            val darkSpread = if (darkCountWin > 0) darkSpreadSum / darkCountWin else 0.01
+
+            // Flash threshold: must stand out clearly above local ambient dark spread
+            // Minimum delta 0.04 (~10 / 255 luma levels), scaling with darkSpread
+            val threshold = p25 + maxOf(0.04, 3.5 * darkSpread)
+            if (means[i] >= threshold) {
+                isFlashCandidate[i] = true
+            }
+        }
+
+        // Group candidate flash frames into contiguous pulses
+        // In a true strobe, pulses are short (<= 80ms, e.g. 1-20 frames depending on fps).
+        val maxPulseFrames = maxOf(2, (safeFps * 0.08).roundToInt())
+        val validFlashIndices = HashSet<Int>()
+        var pulseStart = -1
+        var pulseCount = 0
+
+        for (i in 0 until n) {
+            if (isFlashCandidate[i]) {
+                if (pulseStart < 0) pulseStart = i
+            } else {
+                if (pulseStart >= 0) {
+                    val len = i - pulseStart
+                    if (len in 1..maxPulseFrames) {
+                        for (k in pulseStart until i) validFlashIndices.add(k)
+                        pulseCount++
+                    }
+                    pulseStart = -1
+                }
+            }
+        }
+        if (pulseStart >= 0) {
+            val len = n - pulseStart
+            if (len in 1..maxPulseFrames) {
+                for (k in pulseStart until n) validFlashIndices.add(k)
+                pulseCount++
+            }
+        }
+
+        val flashRatio = validFlashIndices.size.toDouble() / n
+        // Strobe is confirmed if:
+        // 1) At least 2 distinct flash pulses detected
+        // 2) Flash frames occupy between 1% and 45% of total frames (dark gap is dominant)
+        val isStrobe = pulseCount >= 2 && flashRatio in 0.01..0.45
+
+        if (!isStrobe) {
+            val outFps = safeFps.coerceIn(15, 60)
+            return DecimationPlan(
+                isStrobeDecimated = false,
+                outputFps = outFps,
+                flashCount = 0,
+                darkCount = n,
+                selectedSourceIndices = IntArray(n) { it },
+                gains = temporalGainAdaptive(means, WINDOW, MAX_GAIN, 0.25),
+            )
+        }
+
+        val darkIndices = ArrayList<Int>(n - validFlashIndices.size)
+        for (i in 0 until n) {
+            if (i !in validFlashIndices) darkIndices.add(i)
+        }
+        if (darkIndices.isEmpty()) {
+            val outFps = safeFps.coerceIn(15, 60)
+            return DecimationPlan(
+                isStrobeDecimated = false,
+                outputFps = outFps,
+                flashCount = 0,
+                darkCount = n,
+                selectedSourceIndices = IntArray(n) { it },
+                gains = temporalGainAdaptive(means, WINDOW, MAX_GAIN, 0.25),
+            )
+        }
+
+        if (safeFps >= 100) {
+            // High-Speed Mode (e.g. 120 or 240 fps):
+            // Decimate down to clean 60 fps (or 30 fps slow-mo) by picking dark frames closest to ideal output timestamps.
+            val targetFps = if (slowMo) 30 else 60
+            val t0 = timestampsUs.firstOrNull() ?: 0L
+            val tEnd = timestampsUs.lastOrNull() ?: 0L
+            val durUs = if (tEnd > t0) tEnd - t0 else (n * 1_000_000L / safeFps)
+            val outCount = maxOf(1, (durUs * targetFps / 1_000_000.0).roundToInt())
+
+            val selected = IntArray(outCount)
+            var lastIdx = 0
+            for (m in 0 until outCount) {
+                val targetUs = t0 + (m * 1_000_000L / targetFps)
+                var bestDark = darkIndices[lastIdx]
+                var bestDiff = Math.abs(timestampsUs.getOrElse(bestDark) { targetUs } - targetUs)
+                var searchIdx = lastIdx
+                while (searchIdx < darkIndices.size) {
+                    val candidate = darkIndices[searchIdx]
+                    val candUs = timestampsUs.getOrElse(candidate) { targetUs }
+                    val diff = Math.abs(candUs - targetUs)
+                    if (diff <= bestDiff) {
+                        bestDiff = diff
+                        bestDark = candidate
+                        lastIdx = searchIdx
+                    } else if (candUs > targetUs && diff > bestDiff) {
+                        break
+                    }
+                    searchIdx++
+                }
+                selected[m] = bestDark
+            }
+
+            val selectedMeans = DoubleArray(outCount) { means[selected[it]] }
+            val gains = temporalGainAdaptive(selectedMeans, WINDOW, MAX_GAIN, 0.25)
+            return DecimationPlan(
+                isStrobeDecimated = true,
+                outputFps = targetFps,
+                flashCount = validFlashIndices.size,
+                darkCount = darkIndices.size,
+                selectedSourceIndices = selected,
+                gains = gains,
+            )
+        } else {
+            // Standard Rate Mode (e.g. 30 or 60 fps):
+            // Replace flashed frames with the nearest clean dark frame.
+            val selected = IntArray(n)
+            var currentDark = darkIndices[0]
+            for (i in 0 until n) {
+                if (i in validFlashIndices) {
+                    selected[i] = currentDark
+                } else {
+                    currentDark = i
+                    selected[i] = i
+                }
+            }
+
+            val selectedMeans = DoubleArray(n) { means[selected[it]] }
+            val gains = temporalGainAdaptive(selectedMeans, WINDOW, MAX_GAIN, 0.25)
+            return DecimationPlan(
+                isStrobeDecimated = true,
+                outputFps = safeFps,
+                flashCount = validFlashIndices.size,
+                darkCount = darkIndices.size,
+                selectedSourceIndices = selected,
+                gains = gains,
+            )
         }
     }
 
@@ -253,29 +505,22 @@ object OnDevicePost {
     private fun encodeWithGains(
         srcFile: File,
         dstFile: File,
-        gains: DoubleArray,
+        plan: DecimationPlan,
         lineRateHz: Double,
         onProgress: (Int) -> Unit
     ) {
         // MediaMetadataRetriever is AutoCloseable only from API 29: release it by hand (minSdk 28).
         var rotation = 0
-        var srcFps = 30
         val r = MediaMetadataRetriever()
         try {
             r.setDataSource(srcFile.path)
             rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-            val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
-            val count = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toDoubleOrNull() ?: 0.0
-            val measuredFps = if (durMs > 0.0 && count > 0.0) count * 1000.0 / durMs else null
-            // Never use raw CAPTURE_FRAMERATE as playback framerate because slow-mo / high-speed capture rates
-            // (e.g. 120/240 fps) will overload standard video encoders and crash with NO_MEMORY.
-            srcFps = measuredFps?.roundToInt()?.coerceIn(15, 60)
-                ?: r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()?.roundToInt()?.coerceIn(15, 60)
-                ?: 30
         } catch (_: Exception) {
         } finally {
             r.release()
         }
+
+        val outFps = plan.outputFps
 
         // The audio track (if any) is copied as is, so the fixed clip keeps its sound.
         val audioEx = MediaExtractor().apply { setDataSource(srcFile.path) }
@@ -291,7 +536,8 @@ object OnDevicePost {
         var muxer: MediaMuxer? = null
         var track = -1
         var muxerStarted = false
-        var frame = 0
+        var outIdx = 0
+        var srcIdx = 0
         val info = MediaCodec.BufferInfo()
 
         var eosRetries = 0
@@ -333,7 +579,7 @@ object OnDevicePost {
                         val fmt = MediaFormat.createVideoFormat(mime, w, h).apply {
                             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
                             setInteger(MediaFormat.KEY_BIT_RATE, askBitrate)
-                            setInteger(MediaFormat.KEY_FRAME_RATE, srcFps)
+                            setInteger(MediaFormat.KEY_FRAME_RATE, outFps)
                             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
                             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
                             if (android.os.Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
@@ -344,11 +590,11 @@ object OnDevicePost {
                         }
                     }
 
-                    val preferHevc = isHevcEncoderAvailable(w, h, srcFps)
+                    val preferHevc = isHevcEncoderAvailable(w, h, outFps)
                     val enc = if (preferHevc) {
                         try {
                             createEncoder(MediaFormat.MIMETYPE_VIDEO_HEVC).also {
-                                android.util.Log.i("nostrobe", "OnDevicePost: initialized HEVC encoder for ${w}x$h @ $srcFps fps")
+                                android.util.Log.i("nostrobe", "OnDevicePost: initialized HEVC encoder for ${w}x$h @ $outFps fps")
                             }
                         } catch (e: Exception) {
                             android.util.Log.w("nostrobe", "OnDevicePost: HEVC encoder start failed, falling back to AVC: ${e.message}")
@@ -356,7 +602,7 @@ object OnDevicePost {
                         }
                     } else {
                         createEncoder(MediaFormat.MIMETYPE_VIDEO_AVC).also {
-                            android.util.Log.i("nostrobe", "OnDevicePost: initialized AVC encoder for ${w}x$h @ $srcFps fps")
+                            android.util.Log.i("nostrobe", "OnDevicePost: initialized AVC encoder for ${w}x$h @ $outFps fps")
                         }
                     }
                     encoder = enc
@@ -365,32 +611,44 @@ object OnDevicePost {
                     }
                 }
                 val enc = encoder!!
-                var idx = enc.dequeueInputBuffer(TIMEOUT_US)
-                while (idx < 0) {
+
+                while (outIdx < plan.selectedSourceIndices.size && plan.selectedSourceIndices[outIdx] == srcIdx) {
+                    var idx = enc.dequeueInputBuffer(TIMEOUT_US)
+                    while (idx < 0) {
+                        drain(false)
+                        idx = enc.dequeueInputBuffer(TIMEOUT_US)
+                    }
+                    val dst = enc.getInputImage(idx) ?: throw PostException("encoder gives no input image")
+                    val g = plan.gains.getOrElse(outIdx) { 1.0 }
+
+                    val rowGains: DoubleArray? = if (lineRateHz > 0.0) {
+                        val p0 = image.planes[0]
+                        val prof = NsJni.extractProfile(p0.buffer, image.width, image.height, p0.rowStride, p0.pixelStride)
+                        NsJni.rowGain(prof, lineRateHz)?.takeIf { it.isNotEmpty() }
+                    } else null
+
+                    // Plane 0: Luma Y
+                    copyPlane(image.planes[0], image.width, image.height, dst.planes[0], dst.width, dst.height, g, rowGains, isChroma = false)
+                    // Plane 1: Chroma U (Cb) centered around 128
+                    copyPlane(image.planes[1], image.width / 2, image.height / 2, dst.planes[1], dst.width / 2, dst.height / 2, g, null, isChroma = true)
+                    // Plane 2: Chroma V (Cr) centered around 128
+                    copyPlane(image.planes[2], image.width / 2, image.height / 2, dst.planes[2], dst.width / 2, dst.height / 2, g, null, isChroma = true)
+                    val size = dst.width * dst.height * 3 / 2
+                    dst.close()
+
+                    val outPtsUs = if (plan.isStrobeDecimated) {
+                        (outIdx * 1_000_000L / outFps)
+                    } else {
+                        pts
+                    }
+                    enc.queueInputBuffer(idx, 0, size, outPtsUs, 0)
+                    outIdx++
+                    if (outIdx % 5 == 0 && plan.selectedSourceIndices.isNotEmpty()) {
+                        onProgress(100 * outIdx / plan.selectedSourceIndices.size)
+                    }
                     drain(false)
-                    idx = enc.dequeueInputBuffer(TIMEOUT_US)
                 }
-                val dst = enc.getInputImage(idx) ?: throw PostException("encoder gives no input image")
-                val g = gains.getOrElse(frame) { 1.0 }
-
-                val rowGains: DoubleArray? = if (lineRateHz > 0.0) {
-                    val p0 = image.planes[0]
-                    val prof = NsJni.extractProfile(p0.buffer, image.width, image.height, p0.rowStride, p0.pixelStride)
-                    NsJni.rowGain(prof, lineRateHz)?.takeIf { it.isNotEmpty() }
-                } else null
-
-                // Plane 0: Luma Y
-                copyPlane(image.planes[0], image.width, image.height, dst.planes[0], dst.width, dst.height, g, rowGains, isChroma = false)
-                // Plane 1: Chroma U (Cb) centered around 128
-                copyPlane(image.planes[1], image.width / 2, image.height / 2, dst.planes[1], dst.width / 2, dst.height / 2, g, null, isChroma = true)
-                // Plane 2: Chroma V (Cr) centered around 128
-                copyPlane(image.planes[2], image.width / 2, image.height / 2, dst.planes[2], dst.width / 2, dst.height / 2, g, null, isChroma = true)
-                val size = dst.width * dst.height * 3 / 2
-                dst.close()
-                enc.queueInputBuffer(idx, 0, size, pts, 0)
-                frame++
-                if (frame % 5 == 0) onProgress(100 * frame / gains.size)
-                drain(false)
+                srcIdx++
             })
 
             val enc = encoder ?: throw PostException("no frames to encode")

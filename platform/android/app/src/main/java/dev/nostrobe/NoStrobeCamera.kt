@@ -132,11 +132,15 @@ class NoStrobeCamera(
     @Volatile private var lockHz = 0.0
     @Volatile private var lockFps = 0.0
     @Volatile private var lockAtMs = 0L
+    @Volatile private var lockMode = -1
 
     /** (exposure us, frequency Hz) of a lock seen in the last seconds, else (0, 0). A status of
-     *  "search" is interleaved with "locked" during re-checks, so the instant is not enough. */
+     *  "search" is interleaved with "locked" during re-checks, so the instant is not enough.
+     *  A GAP or FLASH lock is a window at a fixed phase of the light: a reopened session runs on the
+     *  sensor's own clock and loses that phase, so such a lock is not carried. */
     fun carryLock(): Triple<Double, Double, Double> =
-        if (lockHz > 0.0 && SystemClock.elapsedRealtime() - lockAtMs < LOCK_GRACE_MS) Triple(lockExposureUs, lockHz, lockFps)
+        if (lockHz > 0.0 && lockMode != NsJni.MODE_GAP && lockMode != NsJni.MODE_FLASH &&
+            SystemClock.elapsedRealtime() - lockAtMs < LOCK_GRACE_MS) Triple(lockExposureUs, lockHz, lockFps)
         else Triple(0.0, 0.0, 0.0)
     // The lens actually pinned by the session that is running (null: the logical camera).
     private var activePhysicalId: String? = null
@@ -144,7 +148,11 @@ class NoStrobeCamera(
     private var photoReader: ImageReader? = null
     private var onPictureCallback: ((ByteArray) -> Unit)? = null
     /** A still burst in progress: JPEGs and capture results are collected until the pick. */
-    private class Burst(val expected: Int, val onPicture: (ByteArray) -> Unit) {
+    private class Burst(
+        val expected: Int,
+        val onPicture: (ByteArray) -> Unit,
+        val onFailure: () -> Unit,
+    ) {
         val frames = ArrayList<Pair<Long, ByteArray>>()        // image timestamp -> JPEG
         val meta = HashMap<Long, Pair<Long, Int>>()            // sensor timestamp -> (exposure ns, ISO)
         var failed = 0
@@ -637,25 +645,38 @@ class NoStrobeCamera(
     /**
      * Take a still photo as a BURST and keep the best frame: under a strobe some frames are lit by
      * a pulse and some are not, and a single shot cannot choose. Each frame carries the
-     * flicker-locked exposure when there is a lock. [onPicture] gets the chosen JPEG once.
+     * flicker-locked exposure when there is a lock. [onPicture] gets the chosen JPEG once;
+     * [onFailure] is called instead when no frame could be taken (camera thread).
      */
-    fun takePicture(orientation: Int, onPicture: (ByteArray) -> Unit) {
+    fun takePicture(orientation: Int, onFailure: () -> Unit = {}, onPicture: (ByteArray) -> Unit) {
         val current = burst
         if (current != null && !current.done) return  // the previous burst is still running
-        if (!startBurst(orientation, BURST_COUNT, onPicture)) {
+        if (!startBurst(orientation, BURST_COUNT, onPicture, onFailure)) {
             // The device refused the burst: a single frame, as before, rather than no photo.
             Log.w(TAG, "burst refused: single capture")
-            startBurst(orientation, 1, onPicture)
+            if (!startBurst(orientation, 1, onPicture, onFailure)) onFailure()
         }
     }
 
-    private fun startBurst(orientation: Int, count: Int, onPicture: (ByteArray) -> Unit): Boolean {
+    private fun startBurst(orientation: Int, count: Int, onPicture: (ByteArray) -> Unit, onFailure: () -> Unit): Boolean {
         val d = device ?: return false
         val s = session ?: return false
-        val ps = photoReader?.surface ?: return false
-        val b = Burst(count, onPicture)
+        val pr = photoReader ?: return false
+        val ps = pr.surface
+        // A JPEG still in the reader is a late frame of a burst that timed out: it is closed here, not
+        // counted in this burst.
+        while (true) {
+            val late = try { pr.acquireNextImage() } catch (_: Exception) { null } ?: break
+            late.close()
+        }
+        val b = Burst(count, onPicture, onFailure)
         burst = b
         try {
+            // The lock of the auto-exposure is set only where the device offers it.
+            val aeLockOk = runCatching {
+                manager.getCameraCharacteristics(activePhysicalId ?: cameraId)
+                    .get(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) == true
+            }.getOrDefault(false)
             val requests = (0 until count).map {
                 val r = d.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
                 r.addTarget(ps)
@@ -674,7 +695,7 @@ class NoStrobeCamera(
                     // No flicker lock: the auto-exposure keeps converging between the frames of the burst
                     // (16 ms then 66 ms on a Pixel 10 Pro XL in a dim room), and the frames could not be
                     // compared. Lock it at its current state for the whole burst.
-                    r.set(CaptureRequest.CONTROL_AE_LOCK, true)
+                    if (aeLockOk) r.set(CaptureRequest.CONTROL_AE_LOCK, true)
                 }
                 r.build()
             }
@@ -717,7 +738,8 @@ class NoStrobeCamera(
     /** All the frames and results are in (a failed capture counts as answered). */
     private fun maybeFinishBurst(b: Burst) {
         val ready = synchronized(b) {
-            !b.done && b.frames.size + b.failed >= b.expected && b.frames.all { b.meta.containsKey(it.first) }
+            // A late JPEG of an earlier burst has no result here: it is not counted.
+            !b.done && b.frames.count { b.meta.containsKey(it.first) } + b.failed >= b.expected
         }
         if (ready) finishBurst(b)
     }
@@ -727,31 +749,41 @@ class NoStrobeCamera(
         val frames = synchronized(b) {
             if (b.done) return
             b.done = true
-            b.frames.toList()
+            // Only the frames that one of this burst's results accounts for; every frame when the
+            // results did not arrive at all (the pipeline stalled).
+            val own = b.frames.filter { b.meta.containsKey(it.first) }
+            if (own.isNotEmpty()) own else b.frames.toList()
         }
         if (burst === b) burst = null
         if (frames.isEmpty()) {
             Log.w(TAG, "burst: no frame arrived")
+            b.onFailure()
             return
         }
         Thread {
-            try {
+            // Out of memory included: the first frame is kept rather than the app being killed.
+            val best = try {
                 val scored = frames.map { (ts, jpeg) ->
                     val (e, iso) = synchronized(b) { b.meta[ts] } ?: (0L to 0)
                     BurstPick.analyse(jpeg, e, iso)
                 }
-                val best = BurstPick.pick(scored)
-                Log.i(TAG, "burst: ${frames.size} frames, kept #$best; light " +
+                val pick = BurstPick.pick(scored)
+                Log.i(TAG, "burst: ${frames.size} frames, kept #$pick; light " +
                     scored.joinToString(" ") { "%.2f".format(it.light) } + "; banding " +
                     scored.joinToString(" ") { "%.3f".format(it.banding) } + "; exposure ms x ISO " +
                     frames.joinToString(" ") { (ts, _) ->
                         val (e, iso) = synchronized(b) { b.meta[ts] } ?: (0L to 0)
                         "%.1fx%d".format(e / 1e6, iso)
                     })
-                b.onPicture(frames[best].second)
-            } catch (e: Exception) {
+                pick
+            } catch (e: Throwable) {
                 Log.w(TAG, "burst pick failed (${e.message}): keeping the first frame")
-                b.onPicture(frames[0].second)
+                0
+            }
+            try {
+                b.onPicture(frames[best].second)
+            } catch (e: Throwable) {
+                Log.w(TAG, "burst: the photo callback failed: ${e.message}")
             }
         }.start()
     }
@@ -1184,6 +1216,7 @@ class NoStrobeCamera(
             }
             if (applied.state == NsJni.STATE_LOCKED && (applied.flickerHz > 0.0 || applied.periodUs > 0.0)) {
                 lockExposureUs = applied.exposureUs
+                lockMode = applied.mode
                 // The flicker frequency, not 1 / the locked exposure: the exposure is k / f, and
                 // the high-speed choice (fps <= f) and the seed need f.
                 lockHz = if (applied.flickerHz > 0.0) applied.flickerHz else (pwm?.frequencyHz() ?: 0.0)

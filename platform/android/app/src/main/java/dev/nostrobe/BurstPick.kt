@@ -26,6 +26,8 @@ object BurstPick {
         val banding: Double,
         /** Exposure (ms) x ISO / 100 the sensor reported for the frame; 0 when unknown. */
         val gain: Double = 1.0,
+        /** False when the JPEG did not decode: such a frame is never kept while a decoded one exists. */
+        val valid: Boolean = true,
     )
 
     /** The exposure x ISO of the burst stayed within this ratio: its light levels can be compared. */
@@ -33,6 +35,12 @@ object BurstPick {
 
     /** Index of the frame to keep (0 when the list is empty or has one frame). */
     fun pick(frames: List<Frame>): Int {
+        val ok = frames.indices.filter { frames[it].valid }
+        if (ok.isEmpty()) return 0
+        return ok[pickValid(ok.map { frames[it] })]
+    }
+
+    private fun pickValid(frames: List<Frame>): Int {
         if (frames.size <= 1) return 0
         if (!comparable(frames)) return frames.indices.minByOrNull { frames[it].banding } ?: 0
         val darkest = frames.minOf { it.light }
@@ -52,7 +60,7 @@ object BurstPick {
      */
     fun analyse(jpeg: ByteArray, exposureNs: Long, iso: Int): Frame {
         val opts = BitmapFactory.Options().apply { inSampleSize = 8 }
-        val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts) ?: return Frame(0.0, 0.0)
+        val bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts) ?: return Frame(0.0, 0.0, valid = false)
         val w = bmp.width
         val h = bmp.height
         val px = IntArray(w * h)

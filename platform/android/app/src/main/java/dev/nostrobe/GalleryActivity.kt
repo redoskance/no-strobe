@@ -143,6 +143,7 @@ class GalleryActivity : AppCompatActivity() {
 
         videoPlayer.setOnErrorListener { _, what, extra ->
             android.util.Log.w("nostrobe", "VideoView error: what=$what extra=$extra")
+            Toast.makeText(this, "Lecture de la vidéo impossible", Toast.LENGTH_SHORT).show()
             true
         }
 

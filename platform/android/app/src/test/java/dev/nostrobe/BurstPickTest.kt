@@ -55,6 +55,15 @@ class BurstPickTest {
     }
 
     @Test
+    fun undecodableFrameIsNeverPickedWhileAValidOneExists() {
+        // An undecodable JPEG is 0 light and 0 banding: it would win on both. It must lose.
+        val bad = BurstPick.Frame(0.0, 0.0, valid = false)
+        assertEquals(2, BurstPick.pick(listOf(bad, f(1.0, 0.05), f(1.02, 0.01))))
+        assertEquals(0, BurstPick.pick(listOf(f(1.0, 0.05), bad)))
+        assertEquals(0, BurstPick.pick(listOf(bad, bad)))
+    }
+
+    @Test
     fun unknownGainIsNotComparable() {
         val frames = listOf(BurstPick.Frame(1.0, 0.05, gain = 0.0), BurstPick.Frame(2.5, 0.01, gain = 0.0))
         assertEquals(false, BurstPick.comparable(frames))

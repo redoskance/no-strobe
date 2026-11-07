@@ -114,6 +114,9 @@ class MainActivity : AppCompatActivity() {
     private var lastScreenWidthDp = 0
     private var lastScreenHeightDp = 0
     private var lastOrientation = 0
+    private var lastUiMode = 0
+    private var lastDensityDpi = 0
+    private var lastFontScale = 0f
     private var lastCommand: NsJni.NsCommand? = null
 
     /** STROBE: video, searched with the slow strobe controller (1-20 Hz) instead of the fast LED/PWM one. */
@@ -160,6 +163,10 @@ class MainActivity : AppCompatActivity() {
             ?: Size(1920, 1080)
     }
 
+    /** The debug extras of the adb tests are honoured in debuggable builds only: the activity is exported. */
+    private val debugBuild: Boolean
+        get() = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         android.util.Log.i("nostrobe", "lifecycle: onCreate (saved=${savedInstanceState != null})")
         DynamicColors.applyToActivityIfAvailable(this)
@@ -169,6 +176,9 @@ class MainActivity : AppCompatActivity() {
         lastScreenWidthDp = config.screenWidthDp
         lastScreenHeightDp = config.screenHeightDp
         lastOrientation = config.orientation
+        lastUiMode = config.uiMode
+        lastDensityDpi = config.densityDpi
+        lastFontScale = config.fontScale
         layoutPortrait = config.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
         setContentView(R.layout.main)
         // A camera app: the screen must not go to sleep while it is in front. A recording longer than
@@ -424,13 +434,21 @@ class MainActivity : AppCompatActivity() {
         super.onConfigurationChanged(newConfig)
         android.util.Log.i("nostrobe", "lifecycle: onConfigurationChanged orientation=${newConfig.orientation} (recording=${recorder != null})")
         applyImmersiveMode()
+        // The layout is inflated again for a size, a day/night, a density or a font-scale change: those
+        // are handled here (the manifest keeps the activity alive), not by a recreate.
         val sizeChanged = newConfig.screenWidthDp != lastScreenWidthDp ||
                           newConfig.screenHeightDp != lastScreenHeightDp ||
-                          newConfig.orientation != lastOrientation
+                          newConfig.orientation != lastOrientation ||
+                          newConfig.uiMode != lastUiMode ||
+                          newConfig.densityDpi != lastDensityDpi ||
+                          newConfig.fontScale != lastFontScale
         if (!sizeChanged) return
         lastScreenWidthDp = newConfig.screenWidthDp
         lastScreenHeightDp = newConfig.screenHeightDp
         lastOrientation = newConfig.orientation
+        lastUiMode = newConfig.uiMode
+        lastDensityDpi = newConfig.densityDpi
+        lastFontScale = newConfig.fontScale
         if (recorder != null) { relayoutAfterRecording = true; return }
         recreate()
     }
@@ -510,20 +528,20 @@ class MainActivity : AppCompatActivity() {
             physicalId = if (recorder != null) null else option.physicalId,
             zoomRatio = if (recorder != null && option.physicalId != null) logicalZoomFor(option) else zoomRatio,
             evBias = evBias,
-            simFlickerHz = intent.getDoubleExtra("sim_hz", 0.0),
+            simFlickerHz = if (debugBuild) intent.getDoubleExtra("sim_hz", 0.0) else 0.0,
             seedExposureUs = if (recorder != null) carryExposureUs else 0.0,
             seedHz = if (recorder != null) carryHz else 0.0,
             holdAutoNoSeed = recorder != null,
-            forceAutoOnly = intent.getBooleanExtra("force_auto_only", false),
+            forceAutoOnly = debugBuild && intent.getBooleanExtra("force_auto_only", false),
             // Recording: no analysis stream (preview + recorder only). With the third stream a
             // Pixel 11 Pro Fold wrote pure noise into the clip; the lock is applied open loop.
-            dumpProfiles = intent.getBooleanExtra("dump_profiles", false).also {
+            dumpProfiles = debugBuild && intent.getBooleanExtra("dump_profiles", false).also {
                 dumpExposuresOverride = intent.getStringExtra("dump_exposures")
                     ?.split(',')?.mapNotNull { v -> v.trim().toDoubleOrNull() }?.takeIf { l -> l.isNotEmpty() }?.toDoubleArray()
             },
             outDir = externalCacheDir ?: cacheDir,
             highSpeedFps = if (recorder != null) hsFps else 0,
-            startLevel = if (recorder != null) 2 else intent.getIntExtra("session_level", 0),
+            startLevel = if (recorder != null) 2 else if (debugBuild) intent.getIntExtra("session_level", 0) else 0,
             recordFps = recFps,
             onReady = {
                 // Session configured with the recorder surface: start recording now.
@@ -534,6 +552,13 @@ class MainActivity : AppCompatActivity() {
                         recorderStarted = true
                     } catch (e: RuntimeException) {
                         android.util.Log.w("nostrobe", "recorder did not start: ${e.message}")
+                        // Nothing is recorded: the recording ends with a message, and its empty file goes.
+                        runOnUiThread {
+                            if (recorder === r) {
+                                Toast.makeText(this, "Impossible de démarrer l'enregistrement.", Toast.LENGTH_LONG).show()
+                                endRecordingNow()
+                            }
+                        }
                     }
                 }
             },
@@ -553,7 +578,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { status.text = shortText }
         }
         camera?.meta = pendingMeta
-        if (intent.getBooleanExtra("luma_csv", false) && pendingMeta == null) {
+        if (debugBuild && intent.getBooleanExtra("luma_csv", false) && pendingMeta == null) {
             // Debug: one line per analysed frame (timestamp, exposure, ISO, luma...) to luma.csv.
             val w = java.io.FileWriter(File(externalCacheDir ?: cacheDir, "luma.csv"))
             w.write("timestamp_ns,exposure_ns,iso,luma,state,freq_hz,stale\n")
@@ -871,7 +896,7 @@ class MainActivity : AppCompatActivity() {
         // still overshoots on very noisy footage: measured ~143 Mbit/s in a dark scene.
         // A device with no camcorder profile at all gets plain 720p30.
         val rate = p?.videoBitRate ?: 8_000_000
-        val fps = intent.getIntExtra("rec_fps", 0).takeIf { it > 0 }
+        val fps = (if (debugBuild) intent.getIntExtra("rec_fps", 0) else 0).takeIf { it > 0 }
             ?: carriedLock.third.toInt().takeIf { it > 0 }
             ?: (if (conservative) 30 else fpsFor(p?.videoFrameRate ?: 30))
         // The size the chosen camera outputs to a recorder (the profile is camera 0's).
@@ -1176,7 +1201,9 @@ class MainActivity : AppCompatActivity() {
             }.start()
         }
         val orientation = sensorOrientation()
-        cam.takePicture(orientation) { bytes ->
+        cam.takePicture(orientation, onFailure = {
+            runOnUiThread { Toast.makeText(this, "Photo impossible", Toast.LENGTH_SHORT).show() }
+        }) { bytes ->
             savePhoto(bytes)
         }
     }
@@ -1310,6 +1337,9 @@ class MainActivity : AppCompatActivity() {
         if (clip == null || !clip.exists() || clip.length() == 0L) {
             Toast.makeText(this, "Aucun clip valide à traiter.", Toast.LENGTH_SHORT).show(); return
         }
+        if (clip.extension != "mp4") {
+            Toast.makeText(this, "Ce n'est pas un clip vidéo: rien à post-traiter.", Toast.LENGTH_SHORT).show(); return
+        }
         val out = File(clip.parentFile, clip.nameWithoutExtension + "-fixed.mp4")
         postButton.isEnabled = false
         Thread {
@@ -1349,6 +1379,9 @@ class MainActivity : AppCompatActivity() {
         val clip = lastClip
         if (clip == null || !clip.exists()) {
             Toast.makeText(this, "Aucun clip à envoyer pour le moment.", Toast.LENGTH_SHORT).show(); return
+        }
+        if (clip.extension != "mp4") {
+            Toast.makeText(this, "Ce n'est pas un clip vidéo: rien à envoyer.", Toast.LENGTH_SHORT).show(); return
         }
         val base = LanServerConfig.getServerUrl(this)
         if (base.isBlank()) {

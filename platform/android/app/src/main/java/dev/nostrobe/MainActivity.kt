@@ -94,6 +94,11 @@ class MainActivity : AppCompatActivity() {
     private var lastOrientation = 0
     private var lastCommand: NsJni.NsCommand? = null
 
+    enum class CaptureMode { VIDEO, PHOTO }
+    private var currentMode = CaptureMode.VIDEO
+    private lateinit var modeVideoBtn: TextView
+    private lateinit var modePhotoBtn: TextView
+
     private lateinit var photoButton: android.view.View
     private lateinit var shutterFlash: android.view.View
     private var isSurfaceReady = false
@@ -202,11 +207,38 @@ class MainActivity : AppCompatActivity() {
             true
         }
         recordButton = findViewById(R.id.record)
+        modeVideoBtn = findViewById(R.id.modeVideo)
+        modePhotoBtn = findViewById(R.id.modePhoto)
+        val savedModeStr = savedInstanceState?.getString("capture_mode")
+            ?: prefs().getString("capture_mode", CaptureMode.VIDEO.name) ?: CaptureMode.VIDEO.name
+        currentMode = try { CaptureMode.valueOf(savedModeStr) } catch (_: Exception) { CaptureMode.VIDEO }
+
         recordButton.setOnClickListener {
-            if (recorder == null && timerSecs > 0) startCountdown(timerSecs) { toggleRecord() } else toggleRecord()
+            if (currentMode == CaptureMode.VIDEO) {
+                if (recorder == null && timerSecs > 0) startCountdown(timerSecs) { toggleRecord() } else toggleRecord()
+            } else {
+                if (timerSecs > 0) startCountdown(timerSecs) { takeStillPhoto() } else takeStillPhoto()
+            }
         }
+        modeVideoBtn.setOnClickListener {
+            if (recorder != null) {
+                Toast.makeText(this, "Impossible de changer de mode pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            setCaptureMode(CaptureMode.VIDEO)
+        }
+        modePhotoBtn.setOnClickListener {
+            if (recorder != null) {
+                Toast.makeText(this, "Impossible de changer de mode pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            setCaptureMode(CaptureMode.PHOTO)
+        }
+        // photoButton must exist before updateModeUI() touches it (it crashed every cold start).
         photoButton = findViewById(R.id.photo)
         photoButton.setOnClickListener { takeStillPhoto() }
+        updateModeUI()
+        shutterFlash = findViewById(R.id.shutterFlash)
         OnDevicePost.addListener { isProcessing ->
             runOnUiThread {
                 recordButton.isEnabled = !isProcessing && recorder == null
@@ -677,6 +709,7 @@ class MainActivity : AppCompatActivity() {
             recorder?.release(); recorder = null
             hsFps = 0
             recordButton.isSelected = false
+            updateModeUI()
             flipButton.isEnabled = true
             flipButton.alpha = 1.0f
             photoButton.isEnabled = !OnDevicePost.isProcessing
@@ -777,6 +810,7 @@ class MainActivity : AppCompatActivity() {
         carryExposureUs = carriedLock.first
         carryHz = carriedLock.second
         recordButton.isSelected = true
+        updateModeUI()
         val w = java.io.FileWriter(File(externalCacheDir ?: cacheDir, "clip.csv"))
         w.write("timestamp_ns,exposure_ns,iso,luma,state,freq_hz,stale\n")
         pendingMeta = w
@@ -848,6 +882,34 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         val current = lensOptions.getOrNull(lensIndex)
         outState.putBoolean("selected_is_front", current?.label?.startsWith("front") == true)
+        outState.putString("capture_mode", currentMode.name)
+    }
+
+    private fun setCaptureMode(mode: CaptureMode) {
+        currentMode = mode
+        prefs().edit().putString("capture_mode", mode.name).apply()
+        updateModeUI()
+    }
+
+    private fun updateModeUI() {
+        if (!::modeVideoBtn.isInitialized || !::modePhotoBtn.isInitialized || !::photoButton.isInitialized) return
+        if (currentMode == CaptureMode.VIDEO) {
+            modeVideoBtn.setBackgroundResource(R.drawable.bg_strip)
+            modeVideoBtn.setTextColor(0xFFFFFFFF.toInt())
+            modePhotoBtn.background = null
+            modePhotoBtn.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))
+            recordButton.setBackgroundResource(if (recorder != null) R.drawable.capture_recording else R.drawable.capture_button)
+            recordButton.contentDescription = "record"
+            photoButton.visibility = android.view.View.VISIBLE
+        } else {
+            modePhotoBtn.setBackgroundResource(R.drawable.bg_strip)
+            modePhotoBtn.setTextColor(0xFFFFFFFF.toInt())
+            modeVideoBtn.background = null
+            modeVideoBtn.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))
+            recordButton.setBackgroundResource(R.drawable.capture_idle)
+            recordButton.contentDescription = "photo"
+            photoButton.visibility = android.view.View.GONE
+        }
     }
 
     private fun takeStillPhoto() {

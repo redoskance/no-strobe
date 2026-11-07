@@ -74,6 +74,8 @@ La luminance moyenne par image ne permet pas d'observer les fréquences supérie
 ### Limites connues (version 0.3)
 
 - **Scintillement PWM sur matériel** : la voie par lignes et sa vérification temporelle n'ont pas été revalidées sur un vrai scintillement LED depuis ces modifications. Les essais récents utilisent un scintillement simulé et des profils enregistrés sur téléphone.
+- **Scintillement de 120 ou 300 Hz devant une scène structurée** : un multiple de la cadence d'images ressemble, image après image, à la structure de la scène (texte, clavier) ; pas de verrouillage.
+- **Scène sombre et bruitée** : avec un bruit par ligne d'environ 2 % de la luminance, un scintillement de faible profondeur n'est pas confirmé.
 - **Rafales photo** : jamais observées sous un vrai strobe.
 - **Strobe et repliement** : au-dessus de fps/2 (15 Hz à 30 images/s), la luminance des trames est repliée ; un strobe plus rapide peut alors être confondu avec un strobe plus lent. La recherche s'arrête à 0,4 × fps.
 - **iOS** : l'application iOS est une maquette et ne traite pas le scintillement LED.
@@ -240,6 +242,8 @@ banding pattern.
 ### Known limits (0.3)
 
 - **PWM flicker on hardware**: the row-rate path and its time check have not been revalidated on a real LED flicker since these changes. Recent tests use a simulated flicker and row profiles recorded on a phone.
+- **120 or 300 Hz flicker in front of a structured scene**: a multiple of the frame rate looks, frame after frame, like the structure of the scene (text, a keyboard); no lock.
+- **Dark, noisy scene**: with row noise around 2 % of the luminance, a shallow flicker is not confirmed.
 - **Burst photos**: never observed under a real strobe.
 - **Strobe aliasing**: above fps/2 (15 Hz at 30 fps) the frame luma aliases; a faster strobe can then be mistaken for a slower one. The search stops at 0.4 × fps.
 - **iOS**: the iOS app is a mock-up and does not handle LED flicker.

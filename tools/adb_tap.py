@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tap a button on an Android device by its text or content description (uiautomator dump).
 
-    tools/adb_tap.py <adb-serial> <text>     e.g. tools/adb_tap.py QV781CEX8K record
+    tools/adb_tap.py <adb-serial> <text>     e.g. tools/adb_tap.py <serial> record
 
 Screen coordinates change with the status line height, so tapping by text is the reliable way.
 """

@@ -108,6 +108,43 @@ adb -s <serial> pull /storage/emulated/0/Android/data/dev.nostrobe/cache/profile
 - **Ne commitez jamais une clé de signature** (`*.keystore`, `*.jks`, mots de passe) : un dépôt public la donne à tout le monde, et Android accepterait un APK malveillant signé avec elle comme une mise à jour de l'application. `.gitignore` les exclut.
 - Une clé de publication se configure hors du dépôt : variables d'environnement ou `~/.gradle/gradle.properties` (`NOSTROBE_KEYSTORE_PATH`, `NOSTROBE_STORE_PASSWORD`, `NOSTROBE_KEY_ALIAS`, `NOSTROBE_KEY_PASSWORD`), et, pour le CI, les *secrets* du dépôt (`NOSTROBE_KEYSTORE_B64` en base64, plus les trois mots de passe/alias). Sans clé configurée, le build est signé avec la clé de débogage de la machine.
 
+### Appareils et données personnels
+
+- **Pas de modèle, de numéro de série ni d'enregistrement d'un appareil personnel dans le dépôt** : ni dans les commentaires, ni dans les tests, ni dans la documentation. Écrivez « un téléphone », « un pliable ». Les tests qui dépendent d'un enregistrement (journal de luma, profils de lignes) restent chez leur propriétaire, dans `crates/ns-core/tests/private/` (ignoré par git, voir `.gitignore`) ; dans le dépôt, utilisez des scènes synthétiques (voir `blinking_light_scene` dans `crates/ns-core/tests/strobe_sweep.rs`).
+
+### À faire prochainement
+
+Idées et chantiers ouverts, du plus utile au moins urgent dans chaque groupe. Prenez-en un, ouvrez une issue pour le dire, et gardez les tests verts.
+
+**Validation sur matériel** (rien de tout cela n'a pu être vérifié sans l'appareil)
+- [ ] Une vraie lampe de 100 Hz devant un téléphone, avec le build courant : relever un balayage fin (`--ez dump_profiles true --es dump_exposures 8000,8500,…,32000`), le rejouer avec `replay_real` et confirmer que le verrou tombe sur un creux (la voie par lignes a changé depuis le dernier essai sur une vraie lampe).
+- [ ] Un vrai strobe (ou l'outil `tools/android-strobe-flasher`) : valider la rafale photo (`BurstPick`) et le mode STROBE sur appareil, y compris la revérification toutes les 20 s.
+- [ ] Un vrai appareil 32 bits (armeabi-v7a seul) et un appareil sans `MANUAL_SENSOR`.
+- [ ] Un smartphone pliable, replié et déplié, avec le build courant.
+
+**Contrôleur**
+- [ ] Scintillement de 120 ou 300 Hz (multiple de la cadence d'images) devant une scène structurée : aucun verrou. Piste : comparer les profils de lignes de deux expositions (la structure statique s'annule dans le rapport) plutôt que l'amplitude du banding seul.
+- [ ] Scène sombre et bruitée (bruit d'environ 2 % par ligne) : un scintillement faible n'est pas confirmé. Piste : moyenner les profils d'un essai avant de calculer le banding, et allonger la vérification quand la mesure est limitée par le bruit.
+- [ ] Un verrou aveugle à k ≥ 2 annonce f/k ; `frequency_hz` préfère un PLL périmé ; le balayage recommence sans fin quand la grille a moins de 5 points (relevés par une relecture, non corrigés).
+- [ ] Strobe sous 1,5 Hz : le solveur ne propose aucune exposition avec les limites d'un téléphone dont la cadence minimale est 15 i/s, donc pas de verrou ; au-delà de fps/2 la période est repliée. Un plan « fenêtre de la durée d'une image » pour les strobes lents reste à concevoir.
+- [ ] Strobe large (rapport cyclique de 70 %) vers 17 Hz à 60 i/s : un creux sur deux reste peu profond, les événements viennent un cycle sur deux et la période se lit double. Piste : valider la période candidate par le repli de la luma à P et à P/2.
+- [ ] Mode STROBE : le médian glissant par image (`local_residual`) coûte O(n·w·log w) ; une fenêtre triée incrémentale réduirait le coût par image.
+
+**Android et interface**
+- [ ] Vraie correction en direct dans la vidéo : le MediaRecorder encode le flux tel quel et le verrouillage n'agit qu'en boucle ouverte. Piste : un encodeur MediaCodec alimenté par les images corrigées.
+- [ ] Chaînes de l'interface écrites en dur en français dans le code : les passer dans `strings.xml` (FR et EN).
+- [ ] `usesCleartextTraffic="true"` : le restreindre au réseau local (network security config) pour le déport LAN.
+- [ ] Un scénario `adb` automatisé (démarrage à froid, photo, vidéo, rotation) sur des émulateurs (API 30, 34, tablette), dans le CI.
+
+**Signature et publication**
+- [ ] Configurer une vraie clé de publication privée (secrets du dépôt, voir « Clés de signature »).
+- [ ] Publier la v0.3 : le tag crée un brouillon de release, à relire avant de le publier.
+
+**Dépôt et qualité**
+- [ ] `crates/ns-core/examples/` : 14 fichiers sont sur `main`, contre la règle de ce guide. Les déplacer sur `test-for-android` et faire de `deflicker` (utilisé par `tools/postprocess.sh`) une sous-commande de `no-strobe-post`.
+- [ ] Le code n'est pas formaté par rustfmt et clippy n'est pas dans le CI : les ajouter.
+- [ ] iOS : le dossier n'est qu'une maquette qui ne traite pas le scintillement. L'implémenter (Swift, AVFoundation) ou ne plus la présenter comme une application.
+
 ## 🇬🇧 Contributing Guide (English)
 
 The project films concerts: the app measures LED flicker and sets the sensor exposure to a whole number of flicker cycles (`exposure = k/f`), so frames and sensor rows integrate the exact same light: no horizontal banding, no brightness pumping.
@@ -192,3 +229,40 @@ adb -s <serial> pull /storage/emulated/0/Android/data/dev.nostrobe/cache/profile
 
 - **Never commit a signing key** (`*.keystore`, `*.jks`, passwords): a public repository gives it to everyone, and Android would accept a malicious APK signed with it as an update of the app. `.gitignore` excludes them.
 - A release key is configured outside the repository: environment variables or `~/.gradle/gradle.properties` (`NOSTROBE_KEYSTORE_PATH`, `NOSTROBE_STORE_PASSWORD`, `NOSTROBE_KEY_ALIAS`, `NOSTROBE_KEY_PASSWORD`) and, for CI, the repository *secrets* (`NOSTROBE_KEYSTORE_B64` as base64, plus the passwords and alias). Without a configured key the build is signed with the machine's debug key.
+
+### Personal devices and data
+
+- **No model, serial number or recording of a personal device in the repository**: not in comments, tests or documentation. Write "a phone", "a foldable". Tests that depend on a recording (a luma log, row profiles) stay with their owner, in `crates/ns-core/tests/private/` (git-ignored, see `.gitignore`); in the repository use synthetic scenes (see `blinking_light_scene` in `crates/ns-core/tests/strobe_sweep.rs`).
+
+### Near-future TODO
+
+Open ideas and tasks, most useful first within each group. Pick one, open an issue to say so, and keep the tests green.
+
+**Hardware validation** (none of this could be checked without the device)
+- [ ] A real 100 Hz lamp in front of a phone, with the current build: record a fine sweep (`--ez dump_profiles true --es dump_exposures 8000,8500,…,32000`), replay it with `replay_real` and confirm the lock lands on a null (the row-rate path changed since the last test on a real lamp).
+- [ ] A real strobe (or `tools/android-strobe-flasher`): validate the photo burst (`BurstPick`) and STROBE mode on a device, including the re-check every 20 s.
+- [ ] A real 32-bit device (armeabi-v7a only) and a device without `MANUAL_SENSOR`.
+- [ ] A foldable phone, folded and unfolded, with the current build.
+
+**Controller**
+- [ ] A 120 or 300 Hz flicker (a multiple of the frame rate) in front of a structured scene never locks. Idea: compare the row profiles of two exposures (static structure cancels in the ratio) instead of the banding amplitude alone.
+- [ ] Dark, noisy scene (about 2 % row noise): a shallow flicker is not confirmed. Idea: average the profiles of a trial before computing the banding, and lengthen the check when the measurement is noise-limited.
+- [ ] A blind lock at k ≥ 2 reports f/k; `frequency_hz` prefers a stale PLL; the scan restarts for ever when the grid has fewer than 5 points (found by a review, not fixed).
+- [ ] Strobe under 1.5 Hz: the solver offers no exposure with the limits of a phone whose slowest rate is 15 fps, so no lock; above fps/2 the period aliases. A "one frame long window" plan for slow strobes is still to design.
+- [ ] A wide strobe (70 % duty) near 17 Hz at 60 fps: every second dip stays shallow, the events come every other cycle and the period reads double. Idea: check the candidate period by folding the luma at P and at P/2.
+- [ ] STROBE mode: the per-frame running median (`local_residual`) costs O(n·w·log w); an incremental sorted window would cut the cost per frame.
+
+**Android and interface**
+- [ ] Real live correction in the video: MediaRecorder encodes the stream as is and the lock only acts open loop. Idea: a MediaCodec encoder fed with corrected frames.
+- [ ] Interface strings are hard-coded in French in the code: move them to `strings.xml` (FR and EN).
+- [ ] `usesCleartextTraffic="true"`: restrict it to the local network (network security config) for the LAN offload.
+- [ ] An automated `adb` scenario (cold start, photo, video, rotation) on emulators (API 30, 34, tablet) in CI.
+
+**Signing and publishing**
+- [ ] Set up a real private release key (repository secrets, see "Signing keys").
+- [ ] Publish v0.3: the tag creates a draft release, to review before publishing it.
+
+**Repository and quality**
+- [ ] `crates/ns-core/examples/`: 14 files are on `main`, against the rule of this guide. Move them to `test-for-android` and turn `deflicker` (used by `tools/postprocess.sh`) into a `no-strobe-post` subcommand.
+- [ ] The code is not rustfmt-formatted and clippy is not in CI: add both.
+- [ ] iOS: the folder is only a mock-up that does not handle flicker. Implement it (Swift, AVFoundation) or stop presenting it as an app.

@@ -1,6 +1,6 @@
 //! A scene that moves but does not flicker must not produce a lock.
 //!
-//! On a Pixel 11 Pro Fold facing an animated monitor and an RGB keyboard the controller locked on a
+//! On a foldable phone facing an animated monitor and an RGB keyboard the controller locked on a
 //! different "frequency" at every launch (255, 420, 840, 1321, 3300 Hz) and even switched to 240 fps
 //! high speed on a weak lock: scene motion and static spatial structure look like flicker to a
 //! metric that only measures variation. These tests feed such scenes and count the locks.
@@ -171,7 +171,7 @@ fn a_real_flicker_in_a_dynamic_scene_still_locks_on_a_null() {
     }
 }
 
-/// A dark scene as a phone saw it (Pixel 10 Pro XL, ISO 1000-2000): nothing but noise, whose RELATIVE
+/// A dark scene as a phone saw it (ISO 1000-2000): nothing but noise, whose RELATIVE
 /// size is above 100 % because the mean luma is 0.01-0.09, and the mean luma changes from one exposure
 /// to the next (clipped black frames). Measured relative temporal modulation 1.4-2.4 at every exposure,
 /// and 0.13 at one where the frames were almost black: the "null" the controller then locked on.

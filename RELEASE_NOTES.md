@@ -22,7 +22,7 @@
 - Les rafales photo n'ont jamais été observées sous un vrai strobe.
 - Au-dessus de fps/2 (15 Hz à 30 images/s), la luminance des trames est repliée : un strobe plus rapide peut être confondu avec un strobe plus lent. Il faut 60 images/s pour suivre un strobe au-dessus de 12 Hz.
 - L'application iOS est une maquette et ne traite pas le scintillement LED.
-- Aucun appareil 32 bits réel n'a été testé. Les essais ont été faits sur Pixel 10 Pro XL et Pixel 11 Pro Fold ; un Sony Xperia 1 III a verrouillé une lampe de 100 Hz avant les derniers changements du contrôleur et n'a pas été rebranché depuis.
+- Aucun appareil 32 bits réel n'a été testé. Les essais ont été faits sur des téléphones Android récents ; un autre téléphone a verrouillé une lampe de 100 Hz avant les derniers changements du contrôleur et n'a pas été retesté depuis.
 
 ---
 
@@ -48,7 +48,7 @@
 - Burst photos have never been observed under a real strobe.
 - Above fps/2 (15 Hz at 30 fps) the frame luma aliases: a faster strobe can be mistaken for a slower one. Following a strobe above 12 Hz needs 60 frames per second.
 - The iOS app is a mock-up and does not handle LED flicker.
-- No real 32-bit device has been tested. The tests were run on a Pixel 10 Pro XL and a Pixel 11 Pro Fold; a Sony Xperia 1 III locked a 100 Hz lamp before the latest controller changes and has not been plugged in since.
+- No real 32-bit device has been tested. The tests were run on recent Android phones; another phone locked a 100 Hz lamp before the latest controller changes and has not been retested since.
 
 ---
 

@@ -54,3 +54,6 @@ AGENTS.md
 *.pfx
 keystore.properties
 signing.properties
+
+# Tests that depend on a recording from a personal device stay on the owner's machine (symlinked here)
+/crates/ns-core/tests/private/

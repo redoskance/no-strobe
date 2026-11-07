@@ -61,7 +61,7 @@ arrière. `StrobeLock` (Kotlin pur, testé hors appareil) :
 
 1. **Clé de rolling shutter.** `Camera2Sync.kt` lit `android.sensor.info.rolling_shutter_sustain_duration`, qui n'est
    pas une clé de l'API Android publique (à vérifier sur vos appareils) : d'où `sustain = 0` et le mode « aveugle » sur
-   le Xperia et le Pixel. La clé standard est `CaptureResult.SENSOR_ROLLING_SHUTTER_SKEW` (par image, API 21) :
+   les téléphones de test. La clé standard est `CaptureResult.SENSOR_ROLLING_SHUTTER_SKEW` (par image, API 21) :
    31,2 ms sur le Jelly Star. Elle donnerait directement `line_rate = hauteur / skew` au chemin PWM.
 2. **Strobes au-delà de fps/2.** Le chemin strobe (`controller.rs`) cherche sur la luminance moyenne des images, donc
    jusqu'à `0,4 × fps` (12 Hz à 30 i/s) : un strobe de police à 14–16 Hz lui échappe à 30 i/s. Les bandes datées par le

@@ -365,7 +365,7 @@ class NoStrobeCamera(
         stopped = false
         reportedLoss = false
         Log.i(TAG, "controller: ${if (pwmMode) "pwm (100 Hz - 5 kHz, row profile)" else "strobe (slow flashes, frame luma)"}")
-        // A 32-bit process on a 64-bit capable device (measured on a Xperia 1 III ROM): the
+        // A 32-bit process on a 64-bit capable device (measured on a custom ROM): the
         // framework aborts the whole process inside ImageReader's Image.getPlanes(), which
         // cannot be caught. Those devices stay on auto-exposure and only record.
         val risky32 = !android.os.Process.is64Bit() && Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()
@@ -694,7 +694,7 @@ class NoStrobeCamera(
                     }
                 } else {
                     // No flicker lock: the auto-exposure keeps converging between the frames of the burst
-                    // (16 ms then 66 ms on a Pixel 10 Pro XL in a dim room), and the frames could not be
+                    // (16 ms then 66 ms on a phone in a dim room), and the frames could not be
                     // compared. Lock it at its current state for the whole burst.
                     if (aeLockOk) r.set(CaptureRequest.CONTROL_AE_LOCK, true)
                 }
@@ -791,7 +791,7 @@ class NoStrobeCamera(
 
     /**
      * Opens the capture session, trying simpler stream combinations when the device refuses
-     * one ("Unsupported set of inputs/outputs"; seen on a Sony Xperia 1 III with preview +
+     * one ("Unsupported set of inputs/outputs"; seen on one phone with preview +
      * analysis + recorder on a pinned lens):
      *   0  the requested lens pinned, every stream
      *   1  the logical camera (the phone picks the lens), every stream
@@ -1120,7 +1120,7 @@ class NoStrobeCamera(
             }
             // The exposure THIS frame was taken with: its own capture result, matched by sensor
             // timestamp. On some devices the result arrives after the image (about 40 % of the
-            // frames on a Xperia 1 III and a Pixel 11 Pro Fold): using the latest known value
+            // frames on two phones): using the latest known value
             // instead made the closed loop chase a one-step-old exposure and drift. Such frames
             // are dropped; if no frame ever matches (timestamps of another clock), fall back.
             val frameExposureNs: Long = run {

@@ -63,9 +63,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var micButton: TextView
     private lateinit var gridButton: TextView
     private lateinit var timerButton: TextView
+    private lateinit var slowMoButton: TextView
     private lateinit var gridView: android.view.View
     private lateinit var countdownText: TextView
     private var micOn = true
+    private var slowMoEnabled = false
     // The slow strobe search (1-20 Hz) instead of the fast LED/PWM one: the STROBE segment of the mode selector.
     private var strobeModeOn = false
     // Some devices (tablets, some foldables) have no microphone: no audio, no mic toggle, no permission prompt.
@@ -320,12 +322,25 @@ class MainActivity : AppCompatActivity() {
         if (!hasMicrophone) micButton.visibility = android.view.View.GONE
         gridButton = findViewById(R.id.gridToggle)
         timerButton = findViewById(R.id.timer)
+        slowMoButton = findViewById(R.id.slowMoToggle)
         gridView = findViewById(R.id.grid)
         countdownText = findViewById(R.id.countdown)
         micOn = prefs().getBoolean("mic_on", true)
         timerSecs = prefs().getInt("timer_secs", 0)
+        slowMoEnabled = savedInstanceState?.getBoolean("slow_mo_enabled")
+            ?: prefs().getBoolean("slow_mo_enabled", false)
         gridView.visibility = if (prefs().getBoolean("grid_on", false)) android.view.View.VISIBLE else android.view.View.GONE
         refreshToggles()
+        slowMoButton.setOnClickListener {
+            slowMoEnabled = !slowMoEnabled
+            prefs().edit().putBoolean("slow_mo_enabled", slowMoEnabled).apply()
+            refreshToggles()
+            Toast.makeText(
+                this,
+                if (slowMoEnabled) getString(R.string.msg_slow_mo_on) else getString(R.string.msg_slow_mo_off),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
         micButton.setOnClickListener {
             micOn = !micOn
             prefs().edit().putBoolean("mic_on", micOn).apply()
@@ -519,6 +534,14 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val holder = surfaceView.holder
+        if (recorder == null) {
+            val pSize = selectPreviewSize(manager, option.logicalId)
+            if (pSize != currentPreviewSize) {
+                currentPreviewSize = pSize
+                holder.setFixedSize(pSize.width, pSize.height)
+                findViewById<AspectFrameLayout?>(R.id.aspectLayout)?.setAspectRatio(pSize.width, pSize.height)
+            }
+        }
         // Note: holder.setFixedSize was configured beforehand (in onCreate or selectLens),
         // ensuring the buffer geometry matches the 16:9 preview stream and eliminates anamorphic distortion.
         camera = NoStrobeCamera(
@@ -731,8 +754,15 @@ class MainActivity : AppCompatActivity() {
      * A constrained high-speed mode this camera lists whose frame time still holds an exposure
      * of one flicker period (rate <= 0.9 x f), the fastest and then the largest size up to
      * 1080p: (fps, width, height), or null (then the normal 30/60 fps recording).
+     *
+     * Validates that confidence >= 0.75 and that required ISO under the scene's brightness
+     * budget does not exceed 3200 (avoiding noisy degraded video in low light).
      */
-    private fun pickHighSpeed(hz: Double): Triple<Int, Int, Int>? {
+    private fun pickHighSpeed(
+        hz: Double,
+        confidence: Double = 1.0,
+        budget: Double = 0.0
+    ): Triple<Int, Int, Int>? {
         val option = lensOptions.getOrNull(lensIndex) ?: return null
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         val map = manager.getCameraCharacteristics(option.logicalId)
@@ -742,7 +772,12 @@ class MainActivity : AppCompatActivity() {
             ranges.map { HighSpeedPick.FpsRange(it.lower, it.upper) },
             { r -> map.getHighSpeedVideoSizesFor(android.util.Range(r.lower, r.upper))
                 .map { HighSpeedPick.Size(it.width, it.height) } },
-            hz
+            hz,
+            maxHigh = 1080,
+            budgetUsIso = budget,
+            maxIso = 3200.0,
+            minConfidence = 0.75,
+            confidence = confidence
         )
     }
 
@@ -870,6 +905,8 @@ class MainActivity : AppCompatActivity() {
             micButton.alpha = 1.0f
             timerButton.isEnabled = true
             timerButton.alpha = 1.0f
+            slowMoButton.isEnabled = true
+            slowMoButton.alpha = 1.0f
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             finishClip()
             notifyPost(total, locked)
@@ -897,7 +934,12 @@ class MainActivity : AppCompatActivity() {
         // The lock in force now, with the frame rate it was found at (a dim scene runs at a lower
         // rate): the recording must use that rate, or the exposure would not fit in the frame.
         val carriedLock = camera?.carryLock() ?: Triple(0.0, 0.0, 0.0)
-        val hs = if (!conservative && carriedLock.second > 0.0) pickHighSpeed(carriedLock.second) else null
+        val conf = camera?.currentLockConfidence ?: 1.0
+        val budget = camera?.currentBudget ?: 0.0
+        val effectiveBudget = if (budget > 0.0) budget * Math.pow(2.0, evBias.toDouble()) else 0.0
+        val hs = if (!conservative && carriedLock.second > 0.0) {
+            pickHighSpeed(carriedLock.second, conf, effectiveBudget)
+        } else null
         hsFps = hs?.first ?: 0
         // 1080p keeps the encoder and the lens stream manageable; QUALITY_HIGH can be 4K.
         val p = pickProfile()
@@ -937,14 +979,19 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.i("nostrobe", "recorder: profile %d bps -> asked %d bps, %s, %dx%d @ %d".format(
             rate, askBps, if (hevc) "HEVC" else "H.264", vw, vh, fps))
         if (hs != null) {
-            // High speed: the rate and size the camera lists, the capture rate = the frame rate
-            // (real-time video, not slow motion), and a rate that fits a 240 fps stream.
-            r.setVideoFrameRate(hs.first)
+            // High speed: the rate and size the camera lists. Real-time playback by default
+            // (capture rate == playback rate); 30 fps slow motion when slowMoEnabled is toggled on.
+            val isSlowMo = slowMoEnabled
+            val playbackRate = HighSpeedPick.playbackFps(hs.first, isSlowMo)
+            r.setVideoFrameRate(playbackRate)
             r.setCaptureRate(hs.first.toDouble())
             recFps = hs.first
             r.setVideoSize(hs.second, hs.third)
-            android.util.Log.i("nostrobe", "high speed chosen: ${hs.first} fps ${hs.second}x${hs.third} for %.1f Hz".format(carriedLock.second))
+            android.util.Log.i("nostrobe", "high speed chosen: ${hs.first} fps ${hs.second}x${hs.third} for %.1f Hz (playback: $playbackRate fps, slowMo=$isSlowMo)".format(carriedLock.second))
         } else {
+            if (slowMoEnabled && !conservative) {
+                Toast.makeText(this, getString(R.string.msg_slow_mo_unavailable), Toast.LENGTH_SHORT).show()
+            }
             r.setVideoFrameRate(fps)
             recFps = fps
             r.setVideoSize(vw, vh)
@@ -981,6 +1028,8 @@ class MainActivity : AppCompatActivity() {
         micButton.alpha = 0.4f
         timerButton.isEnabled = false
         timerButton.alpha = 0.4f
+        slowMoButton.isEnabled = false
+        slowMoButton.alpha = 0.4f
         // The activity survives rotation (configChanges in the manifest), so the recording is
         // not cut; the clip's orientation hint is read from the screen at this point.
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED
@@ -991,6 +1040,14 @@ class MainActivity : AppCompatActivity() {
         val w = java.io.FileWriter(File(externalCacheDir ?: cacheDir, "clip.csv"))
         w.write("timestamp_ns,exposure_ns,iso,luma,state,freq_hz,stale\n")
         pendingMeta = w
+        // Ensure preview surface matches high-speed recorder size so viewfinder stays live in constrained session
+        if (hs != null) {
+            if (currentPreviewSize.width != hs.second || currentPreviewSize.height != hs.third) {
+                currentPreviewSize = Size(hs.second, hs.third)
+                surfaceView.holder.setFixedSize(hs.second, hs.third)
+                findViewById<AspectFrameLayout?>(R.id.aspectLayout)?.setAspectRatio(hs.second, hs.third)
+            }
+        }
         // The recorder surface is added by the session, so rebuild it; the recorder starts
         // once the session is configured (MediaRecorder needs frames to flow to its surface).
         camera?.stop(); startCamera()
@@ -1056,6 +1113,8 @@ class MainActivity : AppCompatActivity() {
         micButton.alpha = 1.0f
         timerButton.isEnabled = true
         timerButton.alpha = 1.0f
+        slowMoButton.isEnabled = true
+        slowMoButton.alpha = 1.0f
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         if (started) { finishClip(); notifyPost(total, locked) } else currentRecordingFile?.delete()
         currentRecordingFile = null
@@ -1148,6 +1207,10 @@ class MainActivity : AppCompatActivity() {
         gridButton.isSelected = gridOn
         timerButton.text = if (timerSecs == 0) getString(R.string.btn_timer) else "${timerSecs}s"
         timerButton.isSelected = timerSecs > 0
+        if (::slowMoButton.isInitialized) {
+            slowMoButton.text = getString(R.string.btn_slow_mo)
+            slowMoButton.isSelected = slowMoEnabled
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1161,6 +1224,7 @@ class MainActivity : AppCompatActivity() {
         outState.putFloat("zoom_ratio", zoomRatio)
         outState.putFloat("ev_bias", evBias)
         outState.putString("capture_mode", currentMode.name)
+        outState.putBoolean("slow_mo_enabled", slowMoEnabled)
     }
 
     override fun onDestroy() {
@@ -1206,10 +1270,12 @@ class MainActivity : AppCompatActivity() {
             recordButton.setBackgroundResource(if (recorder != null) R.drawable.capture_recording else R.drawable.capture_button)
             recordButton.contentDescription = "record"
             photoButton.visibility = android.view.View.VISIBLE
+            if (::slowMoButton.isInitialized) slowMoButton.visibility = android.view.View.VISIBLE
         } else {
             recordButton.setBackgroundResource(R.drawable.capture_idle)
             recordButton.contentDescription = "photo"
             photoButton.visibility = android.view.View.GONE
+            if (::slowMoButton.isInitialized) slowMoButton.visibility = android.view.View.GONE
         }
     }
 
@@ -1471,7 +1537,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (cmd.exposureUs <= 0) return head
         val exp = if (cmd.exposureUs >= 1000) "%.1f ms".format(cmd.exposureUs / 1000) else "%.0f us".format(cmd.exposureUs)
-        val hs = if (hsFps > 0) " (HS %d)".format(hsFps) else ""
+        val hs = if (hsFps > 0) {
+            if (slowMoEnabled) " (HS %d slow-mo)".format(hsFps) else " (HS %d)".format(hsFps)
+        } else ""
         return "$head$hs · $exp · ISO %.0f".format(cmd.iso)
     }
 

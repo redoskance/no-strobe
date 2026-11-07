@@ -66,4 +66,57 @@ class HighSpeedPickTest {
         assertEquals(3.0, k2, 1e-9)
         assertEquals(30000.0, e2, 1e-9)
     }
+
+    @Test fun lowLightSafeguardAvoidsNoisyRates() {
+        // At 500 Hz:
+        // 240 fps exposure is 2000 us (k=1).
+        // 120 fps exposure: frameUs = 8333.3 us, k = floor(0.9 * 8333.3 * 500 / 1e6) = 3 -> e = 6000 us.
+        // If budget = 12_000_000:
+        // For 240 fps: reqIso = 12_000_000 / 2000 = 6000 > 3200 -> rejected!
+        // For 120 fps: reqIso = 12_000_000 / 6000 = 2000 <= 3200 -> accepted!
+        val picked = HighSpeedPick.pick(
+            ranges, { r -> sizes[r] ?: emptyList() }, 500.0,
+            budgetUsIso = 12_000_000.0, maxIso = 3200.0
+        )
+        assertEquals(Triple(120, 1920, 1080), picked)
+    }
+
+    @Test fun pitchDarkRejectsAllHighSpeedRates() {
+        // In very dim lighting, even 100 fps would exceed maxIso.
+        // High-speed mode should not engage, preserving image quality by falling back to 30/60 fps with large k.
+        val picked = HighSpeedPick.pick(
+            ranges, { r -> sizes[r] ?: emptyList() }, 500.0,
+            budgetUsIso = 50_000_000.0, maxIso = 3200.0
+        )
+        assertNull(picked)
+    }
+
+    @Test fun weakConfidenceRejectsHighSpeed() {
+        // High-speed runs open-loop without analysis stream, requiring confidence >= 0.75.
+        val picked = HighSpeedPick.pick(
+            ranges, { r -> sizes[r] ?: emptyList() }, 500.0,
+            confidence = 0.50
+        )
+        assertNull(picked)
+
+        val strong = HighSpeedPick.pick(
+            ranges, { r -> sizes[r] ?: emptyList() }, 500.0,
+            confidence = 0.85
+        )
+        assertEquals(Triple(240, 1920, 1080), strong)
+    }
+
+    @Test fun playbackFpsRealTimeByDefault() {
+        // Real-time by default: playback framerate matches capture rate (1.0x speed).
+        assertEquals(240, HighSpeedPick.playbackFps(240, slowMo = false))
+        assertEquals(120, HighSpeedPick.playbackFps(120, slowMo = false))
+        assertEquals(60, HighSpeedPick.playbackFps(60, slowMo = false))
+    }
+
+    @Test fun playbackFpsSlowMotionWhenToggled() {
+        // Slow-motion toggle: playback container framerate set to 30 fps (e.g. 8x or 4x slow-mo).
+        assertEquals(30, HighSpeedPick.playbackFps(240, slowMo = true))
+        assertEquals(30, HighSpeedPick.playbackFps(120, slowMo = true))
+        assertEquals(30, HighSpeedPick.playbackFps(60, slowMo = true))
+    }
 }

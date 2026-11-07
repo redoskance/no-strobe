@@ -17,6 +17,8 @@
     <string name="btn_flip">flip</string>
     <string name="btn_grid">grille</string>
     <string name="btn_timer">retardateur</string>
+    <string name="btn_slow_mo">ralenti</string>
+    <string name="btn_slow_mo_active">ralenti</string>
     <string name="btn_mic">micro</string>
     <string name="btn_mic_muted">coupé</string>
     <string name="btn_lan">LAN</string>
@@ -89,6 +91,9 @@
     <string name="msg_camera_perm_required">L\'autorisation caméra est requise.</string>
     <string name="msg_mic_perm_required">Autorisez le microphone pour enregistrer le son.</string>
     <string name="msg_record_cant_start">Impossible de démarrer l\'enregistrement sur cet appareil.</string>
+    <string name="msg_slow_mo_on">Ralenti activé (lecture à 30 ips)</string>
+    <string name="msg_slow_mo_off">Lecture en temps réel (cadence native)</string>
+    <string name="msg_slow_mo_unavailable">Le ralenti requiert la haute cadence (lumière faible ou scintillement lent)</string>
     <string name="msg_processing_wait_record">Traitement vidéo en cours. Veuillez patienter avant d\'enregistrer.</string>
     <string name="msg_video_saved_format">Vidéo enregistrée dans %s</string>
     <string name="msg_video_saved">Vidéo enregistrée</string>

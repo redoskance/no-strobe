@@ -17,6 +17,8 @@
     <string name="btn_flip">flip</string>
     <string name="btn_grid">grid</string>
     <string name="btn_timer">timer</string>
+    <string name="btn_slow_mo">slow-mo</string>
+    <string name="btn_slow_mo_active">slow-mo</string>
     <string name="btn_mic">mic</string>
     <string name="btn_mic_muted">muted</string>
     <string name="btn_lan">LAN</string>
@@ -89,6 +91,9 @@
     <string name="msg_camera_perm_required">The camera permission is required.</string>
     <string name="msg_mic_perm_required">Allow the microphone to record sound.</string>
     <string name="msg_record_cant_start">Unable to start recording on this device.</string>
+    <string name="msg_slow_mo_on">Slow motion enabled (30 fps playback)</string>
+    <string name="msg_slow_mo_off">Real-time playback (native rate)</string>
+    <string name="msg_slow_mo_unavailable">Slow motion requires high-speed capture (dim light or slow flicker)</string>
     <string name="msg_processing_wait_record">Video processing in progress. Please wait before recording.</string>
     <string name="msg_video_saved_format">Video saved to %s</string>
     <string name="msg_video_saved">Video saved</string>

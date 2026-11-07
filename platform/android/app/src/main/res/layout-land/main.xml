@@ -110,6 +110,22 @@
             android:textSize="10sp" />
 
             <TextView
+                android:id="@+id/slowMoToggle"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_margin="4dp"
+                android:background="@drawable/bg_tool"
+                android:clickable="true"
+                android:drawableTint="@color/icon_tint"
+                android:drawableTop="@drawable/ic_slow_motion"
+                android:focusable="true"
+                android:gravity="center_horizontal"
+                android:paddingTop="8dp"
+                android:text="@string/btn_slow_mo"
+                android:textColor="@color/icon_tint"
+                android:textSize="10sp" />
+
+            <TextView
             android:id="@+id/mic"
             android:layout_width="56dp"
             android:layout_height="56dp"

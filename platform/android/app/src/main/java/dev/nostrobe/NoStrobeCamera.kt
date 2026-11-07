@@ -131,6 +131,7 @@ class NoStrobeCamera(
     @Volatile private var lockExposureUs = 0.0
     @Volatile private var lockHz = 0.0
     @Volatile private var lockFps = 0.0
+    @Volatile private var lockConfidence = 0.0
     @Volatile private var lockAtMs = 0L
     @Volatile private var lockMode = -1
 
@@ -142,6 +143,12 @@ class NoStrobeCamera(
         if (lockHz > 0.0 && lockMode != NsJni.MODE_GAP && lockMode != NsJni.MODE_FLASH &&
             SystemClock.elapsedRealtime() - lockAtMs < LOCK_GRACE_MS) Triple(lockExposureUs, lockHz, lockFps)
         else Triple(0.0, 0.0, 0.0)
+
+    val currentLockConfidence: Double
+        get() = if (SystemClock.elapsedRealtime() - lockAtMs < LOCK_GRACE_MS) lockConfidence else 0.0
+
+    val currentBudget: Double
+        get() = if (budgetUsIso > 0.0) budgetUsIso else latestAutoBudget
     // The lens actually pinned by the session that is running (null: the logical camera).
     private var activePhysicalId: String? = null
     private var analysisSurface: Surface? = null
@@ -460,9 +467,9 @@ class NoStrobeCamera(
             photoReader = pr
             listOf(previewSurface, r.surface, pr.surface)
         }
-        // High-speed: the session takes one or two surfaces and no analysis stream; we give it
-        // the recorder only. The normal set is kept for the fallback when the device refuses.
-        val hsSurfaces = recorder?.surface?.let { listOf(it) }
+        // High-speed: the session takes one or two surfaces and no analysis stream; we provide
+        // both previewSurface and recorder.surface so the viewfinder remains active during recording.
+        val hsSurfaces = if (recorder != null) listOfNotNull(previewSurface, recorder.surface) else null
         val surfaces = if (highSpeedFps > 0 && hsSurfaces != null) hsSurfaces else normalSurfaces
         fallbackSurfaces = normalSurfaces
         surfaceList = surfaces
@@ -822,7 +829,7 @@ class NoStrobeCamera(
                     builder = b
                     hsSession = hs
                     hs.setRepeatingBurst(hs.createHighSpeedRequestList(b.build()), resultCallback, handler)
-                    Log.i(TAG, "high-speed session at $highSpeedFps fps")
+                    Log.i(TAG, "high-speed session at $highSpeedFps fps with ${surfaces.size} surface(s)")
                     handler?.postDelayed({ triggerRecorderStart() }, 1500L)
                 } catch (e: Exception) {
                     Log.w(TAG, "high-speed start failed (${e.message}): normal session")
@@ -831,7 +838,15 @@ class NoStrobeCamera(
             }
 
             override fun onConfigureFailed(s: CameraCaptureSession) {
-                Log.w(TAG, "high-speed session refused at $highSpeedFps fps: normal session")
+                Log.w(TAG, "high-speed session refused at $highSpeedFps fps: trying recorder-only or normal session")
+                if (surfaces.size > 1 && recorder != null) {
+                    try {
+                        createHighSpeedSession(d, listOf(recorder.surface))
+                        return
+                    } catch (e: Exception) {
+                        Log.w(TAG, "retry recorder-only failed: ${e.message}")
+                    }
+                }
                 try { createSession(d, fallbackSurfaces, 2) } catch (e: Exception) {
                     Log.w(TAG, "fallback failed: ${e.message}")
                 }
@@ -840,7 +855,13 @@ class NoStrobeCamera(
         try {
             d.createConstrainedHighSpeedCaptureSession(surfaces, cb, handler)
         } catch (e: Exception) {
-            Log.w(TAG, "high-speed not available (${e.message}): normal session")
+            Log.w(TAG, "high-speed not available (${e.message}): trying recorder-only or normal session")
+            if (surfaces.size > 1 && recorder != null) {
+                try {
+                    d.createConstrainedHighSpeedCaptureSession(listOf(recorder.surface), cb, handler)
+                    return
+                } catch (_: Exception) {}
+            }
             createSession(d, fallbackSurfaces, 2)
         }
     }
@@ -1222,6 +1243,7 @@ class NoStrobeCamera(
                 // the high-speed choice (fps <= f) and the seed need f.
                 lockHz = if (applied.flickerHz > 0.0) applied.flickerHz else (pwm?.frequencyHz() ?: 0.0)
                 lockFps = applied.fps
+                lockConfidence = applied.confidence
                 lockAtMs = SystemClock.elapsedRealtime()
             }
             onStatus(applied)

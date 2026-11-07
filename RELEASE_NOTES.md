@@ -13,6 +13,14 @@
 - **Enregistrement plus robuste** : une boîte de dialogue système (autorisation du micro, volet de notifications) ne termine plus l'enregistrement ; une caméra perdue est rouverte une fois ; un clip commencé est sauvegardé proprement.
 - **Galerie** : les photos s'ouvrent dans une visionneuse, orientées selon leurs métadonnées EXIF.
 - **Stockage** : sur Android 10 et plus, la copie dans DCIM passe par MediaStore et signale son résultat.
+- **Optimisations moteur & contrôleur (v0.3)** :
+  - Médian glissant incrémental en $\mathcal{O}(n \cdot w)$ dans `local_residual` pour un coût CPU réduit par image.
+  - Désambiguïsation d'octave à 17 Hz (rapport cyclique de 70 %) par comparaison du repli de la luma à $P$ et $P/2$.
+  - Plan de solveur pour strobes lents (< 1,5 Hz) avec exposition pleine trame (`frame_us - sustain_us`).
+- **Sécurité réseau & Internationalisation** :
+  - `network_security_config.xml` interdisant le trafic non chiffré en clair, restreint uniquement au réseau local pour le déport LAN.
+  - Traduction et extraction intégrale des chaînes d'interface en français et anglais (`strings.xml`).
+  - Documentation de compatibilité théorique et liste des appareils vérifiés (`COMPATIBILITY.md`).
 
 ### ⚠️ Limites connues
 - La voie par lignes (scintillement PWM) n'a pas été revalidée sur un vrai scintillement LED depuis ces modifications : les essais utilisent un scintillement simulé et des profils enregistrés sur téléphone.
@@ -39,6 +47,14 @@
 - **More robust recording**: a system dialog (microphone permission, notification shade) no longer ends a recording; a lost camera is reopened once; a clip that has started is saved cleanly.
 - **Gallery**: photos open in a viewer, oriented from their EXIF metadata.
 - **Storage**: on Android 10 and later, the copy to DCIM goes through MediaStore and reports its result.
+- **Core & Controller Optimizations (v0.3)**:
+  - Incremental sliding window median in $\mathcal{O}(n \cdot w)$ in `local_residual` for reduced per-frame CPU latency.
+  - Octave disambiguation at 17 Hz (70% duty cycle) by comparing luma fold ratios at $P$ and $P/2$.
+  - Solver plan for slow strobes (< 1.5 Hz) using full-frame window exposure (`frame_us - sustain_us`).
+- **Network Security & Internationalization**:
+  - `network_security_config.xml` blocking public cleartext traffic, restricted strictly to local dev / LAN offload.
+  - Complete English and French localization in `strings.xml`.
+  - Theoretical hardware requirements and verified device list (`COMPATIBILITY.md`).
 
 ### ⚠️ Known Limits
 - The row-rate path (PWM flicker) has not been revalidated on a real LED flicker since these changes: the tests use a simulated flicker and row profiles recorded on a phone.

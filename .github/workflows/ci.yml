@@ -98,7 +98,7 @@ jobs:
           NOSTROBE_STORE_PASSWORD: ${{ secrets.NOSTROBE_STORE_PASSWORD }}
           NOSTROBE_KEY_ALIAS: ${{ secrets.NOSTROBE_KEY_ALIAS }}
           NOSTROBE_KEY_PASSWORD: ${{ secrets.NOSTROBE_KEY_PASSWORD }}
-        run: gradle :app:assembleDebug
+        run: gradle :app:assembleRelease :app:assembleDebug
         working-directory: platform/android
       - name: Publish the nightly release
         if: github.ref == 'refs/heads/main'
@@ -108,15 +108,18 @@ jobs:
           name: Nightly build
           prerelease: true
           files: |
+            platform/android/app/build/outputs/apk/release/app-release.apk
             platform/android/app/build/outputs/apk/debug/app-debug.apk
             target/release/no-strobe-post
-      # Tag releases are created by the tag-release job (one draft), not here.
-      - name: Keep the APK for the tag release
+      # Tag releases are created by the tag-release job, not here.
+      - name: Keep the APKs for the tag release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: platform/android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-apks
+          path: |
+            platform/android/app/build/outputs/apk/release/app-release.apk
+            platform/android/app/build/outputs/apk/debug/app-debug.apk
       - name: Keep the desktop tool for the tag release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
@@ -177,8 +180,7 @@ jobs:
           prerelease: true
           files: build/ios/AntiStrobe-Simulator.app.zip
 
-  # The only job that creates a tag release. It waits for the APK and the iOS zip, and creates
-  # the release as a DRAFT: check the assets, then publish it by hand.
+  # The job that creates and publishes a tag release. It waits for the APK and the iOS zip.
   tag-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [apps, ios]
@@ -188,15 +190,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
-      - name: Create the draft tag release
+      - name: Publish the tag release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
           prerelease: false
-          draft: true
+          draft: false
           files: |
-            dist/app-debug-apk/app-debug.apk
+            dist/app-apks/app-release.apk
+            dist/app-apks/app-debug.apk
             dist/no-strobe-post/no-strobe-post
             dist/ios-mockup-app/AntiStrobe-Simulator.app.zip

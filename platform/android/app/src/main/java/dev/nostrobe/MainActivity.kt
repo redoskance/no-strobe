@@ -565,6 +565,7 @@ class MainActivity : AppCompatActivity() {
             seedHz = if (recorder != null) carryHz else 0.0,
             holdAutoNoSeed = recorder != null,
             forceAutoOnly = debugBuild && intent.getBooleanExtra("force_auto_only", false),
+            allow32BitAnalysis = debugBuild && intent.getBooleanExtra("allow_32bit", false),
             // Recording: no analysis stream (preview + recorder only). With the third stream a
             // A foldable wrote pure noise into the clip; the lock is applied open loop.
             dumpProfiles = debugBuild && intent.getBooleanExtra("dump_profiles", false).also {

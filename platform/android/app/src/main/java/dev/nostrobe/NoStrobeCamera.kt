@@ -62,6 +62,11 @@ class NoStrobeCamera(
     private val simFlickerHz: Double = 0.0,
     /** Debug: behave like a camera without manual exposure. */
     private val forceAutoOnly: Boolean = false,
+    /**
+     * Debug: run the flicker analysis in a 32-bit process on a 64-bit capable device, which is normally refused
+     * (see risky32). Only safe with a simulated flicker (sim_hz), which never reads the image planes.
+     */
+    private val allow32BitAnalysis: Boolean = false,
     /** Debug: start the session ladder at this level (2 = no analysis stream). */
     private val startLevel: Int = 0,
     /** > 0: constrained high-speed recording at this rate, recorder surface only (no preview). */
@@ -282,7 +287,9 @@ class NoStrobeCamera(
                     sustainUs = skewUs
                     val h = reader?.height ?: 1080
                     val computedRate = LineProfileExtractor.lineRate(h, skewNs.toDouble())
-                    if (computedRate > 0.0) {
+                    // A simulated flicker is drawn with SIM_LINE_RATE_HZ rows per second: the controller must read it
+                    // with that rate, not with the sensor's (a skew-reporting phone made the simulation meaningless).
+                    if (computedRate > 0.0 && simFlickerHz <= 0.0) {
                         lineRateHz = computedRate
                         pwm?.setLineRate(computedRate)
                         Log.i(TAG, "sensor rolling shutter skew: %.2f ms -> line rate %.0f Hz".format(
@@ -375,7 +382,7 @@ class NoStrobeCamera(
         // A 32-bit process on a 64-bit capable device (measured on a custom ROM): the
         // framework aborts the whole process inside ImageReader's Image.getPlanes(), which
         // cannot be caught. Those devices stay on auto-exposure and only record.
-        val risky32 = !android.os.Process.is64Bit() && Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()
+        val risky32 = !android.os.Process.is64Bit() && Build.SUPPORTED_64_BIT_ABIS.isNotEmpty() && !allow32BitAnalysis
         if (risky32) Log.w(TAG, "32-bit process on a 64-bit device: no flicker analysis (framework abort in getPlanes)")
         val noProbe = holdAutoNoSeed && seedExposureUs <= 0.0
         autoOnly = forceAutoOnly || risky32 || noProbe ||
@@ -1118,7 +1125,7 @@ class NoStrobeCamera(
                 val limits = baseLimits.copy(supportedFps = doubleArrayOf(chosenFps))
                 Log.i(TAG, "frame rate %.0f for a brightness budget of %.0f (need %.1f ms at ISO %.0f)"
                     .format(chosenFps, budgetUsIso, needUs / 1000.0, ISO_SOFT_MAX))
-                lineRateHz = LineProfileExtractor.lineRate(image.height, sustainUs * 1000.0)
+                lineRateHz = if (simFlickerHz > 0.0) SIM_LINE_RATE_HZ else LineProfileExtractor.lineRate(image.height, sustainUs * 1000.0)
                 pwm = NsJni.createPwm(limits, lineRateHz)
                 val chars = manager.getCameraCharacteristics(activePhysicalId ?: cameraId)
                 val pipelineDepth = (chars.get(CameraCharacteristics.REQUEST_PIPELINE_MAX_DEPTH)?.toInt() ?: 2).toDouble()

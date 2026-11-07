@@ -116,3 +116,27 @@ fn window_never_exceeds_frame_period() {
         }
     }
 }
+
+#[test]
+fn slow_strobe_proposes_full_frame_gap_plan() {
+    for hz in [0.5, 1.0, 1.2, 1.4] {
+        let est = Estimate {
+            period_us: 1e6 / hz,
+            phase_us: 0.0,
+            duty: 0.1,
+            confidence: 0.95,
+        };
+        let limits = CameraLimits::typical_phone();
+        let candidates = solve(&est, &limits);
+        assert!(!candidates.is_empty(), "expected candidates for {hz} Hz slow strobe");
+        let best = candidates[0];
+        assert_eq!(best.mode, Mode::Gap);
+        let frame_us = 1e6 / best.fps;
+        let expected_e = (frame_us - limits.sustain_us).min(limits.max_exposure_us);
+        assert!(
+            (best.exposure_us - expected_e).abs() < 1e-6,
+            "for {hz} Hz, expected full-frame exposure {expected_e} us, got {} us",
+            best.exposure_us
+        );
+    }
+}

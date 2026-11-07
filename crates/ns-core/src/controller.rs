@@ -237,7 +237,20 @@ impl Controller {
             }
             _ => None,
         };
-        if let Some(guess) = period {
+        if let Some(mut guess) = period {
+            let p_half = guess / 2.0;
+            let f_half = 1e6 / p_half;
+            if f_half <= max_hz {
+                let frames: Vec<(f64, f64)> = self.buf.frames().map(|f| (f.t_us, f.luminance)).collect();
+                let (amp_half, ratio_half, best_p_half) = fold_ratio(&frames, p_half);
+                let (amp_full, ratio_full, _) = fold_ratio(&frames, guess);
+                if ratio_half >= MIN_FOLD_RATIO
+                    && amp_half >= MIN_FOLD_AMPLITUDE
+                    && (ratio_half >= 1.5 * ratio_full || amp_half >= 2.0 * amp_full)
+                {
+                    guess = best_p_half;
+                }
+            }
             if let Some(est) = fit_with_seed(&pulses, guess) {
                 if est.confidence >= 0.45 && self.is_a_strobe(&pulses, &est) {
                     let mut tracker = PulseTracker::new(est);
@@ -258,9 +271,34 @@ impl Controller {
     fn is_a_strobe(&self, pulses: &[f64], est: &Estimate) -> bool {
         let (completeness, matched, cycles) = train_regularity(pulses, est);
         let span = pulses.last().copied().unwrap_or(0.0) - pulses.first().copied().unwrap_or(0.0);
+        let fold_verified = || {
+            let frames: Vec<(f64, f64)> = self.buf.frames().map(|f| (f.t_us, f.luminance)).collect();
+            let (amplitude, ratio, _) = fold_ratio(&frames, est.period_us);
+            amplitude >= MIN_FOLD_AMPLITUDE && ratio >= MIN_FOLD_RATIO
+        };
+        let min_completeness = if completeness < MIN_TRAIN_COMPLETENESS && fold_verified() {
+            0.45
+        } else {
+            MIN_TRAIN_COMPLETENESS
+        };
+        // A strobe cannot be accepted at P if P/2 has a much stronger fold (subharmonic false lock).
+        let frame_us = self.buf.frame_period_us();
+        let max_hz = (1e6 / frame_us / 2.0 * 0.8).min(60.0);
+        let p_half = est.period_us / 2.0;
+        if 1e6 / p_half <= max_hz {
+            let frames: Vec<(f64, f64)> = self.buf.frames().map(|f| (f.t_us, f.luminance)).collect();
+            let (amp_half, ratio_half, _) = fold_ratio(&frames, p_half);
+            let (amp_full, ratio_full, _) = fold_ratio(&frames, est.period_us);
+            if ratio_half >= MIN_FOLD_RATIO
+                && amp_half >= MIN_FOLD_AMPLITUDE
+                && (ratio_half >= 2.0 * ratio_full || amp_half >= 2.0 * amp_full)
+            {
+                return false;
+            }
+        }
         cycles >= MIN_TRAIN_CYCLES
             && span >= MIN_TRAIN_SPAN_US
-            && completeness >= MIN_TRAIN_COMPLETENESS
+            && completeness >= min_completeness
             && matched >= MIN_TRAIN_MATCHED
             && !solve(est, &self.limits).is_empty()
     }
@@ -387,16 +425,47 @@ impl Controller {
 }
 
 /// Luma minus its centred running median over `window` samples (truncated at the ends of the buffer).
+/// Maintained via an incremental sliding sorted window in O(n·w) instead of O(n·w·log w).
 fn local_residual(lum: &[f64], window: usize) -> Vec<f64> {
+    if lum.is_empty() {
+        return Vec::new();
+    }
     let half = window / 2;
     let mut out = Vec::with_capacity(lum.len());
-    let mut buf: Vec<f64> = Vec::with_capacity(window);
+    let mut sorted: Vec<f64> = Vec::with_capacity(window + 1);
+    let mut prev_lo = 0;
+    let mut prev_hi = 0;
+
     for i in 0..lum.len() {
         let lo = i.saturating_sub(half);
         let hi = (i + half + 1).min(lum.len());
-        buf.clear();
-        buf.extend_from_slice(&lum[lo..hi]);
-        out.push(lum[i] - median(&buf));
+
+        while prev_lo < lo {
+            let val = lum[prev_lo];
+            if let Ok(idx) = sorted.binary_search_by(|x| x.partial_cmp(&val).unwrap_or(std::cmp::Ordering::Equal)) {
+                sorted.remove(idx);
+            }
+            prev_lo += 1;
+        }
+
+        while prev_hi < hi {
+            let val = lum[prev_hi];
+            let idx = match sorted.binary_search_by(|x| x.partial_cmp(&val).unwrap_or(std::cmp::Ordering::Equal)) {
+                Ok(idx) | Err(idx) => idx,
+            };
+            sorted.insert(idx, val);
+            prev_hi += 1;
+        }
+
+        let n = sorted.len();
+        let med = if n == 0 {
+            0.0
+        } else if n % 2 == 1 {
+            sorted[n / 2]
+        } else {
+            0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+        };
+        out.push(lum[i] - med);
     }
     out
 }
@@ -458,4 +527,31 @@ const MIN_TRAIN_SPAN_US: f64 = 1.0e6;
 fn search_exposure(limits: &CameraLimits, frame_us: f64) -> f64 {
     let target = (SEARCH_FRAME_FRACTION * frame_us).max(SEARCH_EXPOSURE_US);
     limits.min_exposure_us.max(limits.max_exposure_us.min(target))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_local_residual_matches_naive() {
+        let lum = vec![0.1, 0.4, 0.2, 0.8, 0.5, 0.3, 0.9, 0.2, 0.7, 0.6, 0.1, 0.5, 0.8, 0.3];
+        let window = 5;
+        let half = window / 2;
+        let mut expected = Vec::new();
+        for i in 0..lum.len() {
+            let lo = i.saturating_sub(half);
+            let hi = (i + half + 1).min(lum.len());
+            let mut sub = lum[lo..hi].to_vec();
+            sub.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let n = sub.len();
+            let med = if n % 2 == 1 { sub[n / 2] } else { 0.5 * (sub[n / 2 - 1] + sub[n / 2]) };
+            expected.push(lum[i] - med);
+        }
+        let actual = local_residual(&lum, window);
+        assert_eq!(actual.len(), expected.len());
+        for (a, b) in actual.iter().zip(expected.iter()) {
+            assert!((a - b).abs() < 1e-12, "expected {b}, got {a}");
+        }
+    }
 }

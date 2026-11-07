@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">no-strobe</string>
+    <string name="gallery_title">Gallery</string>
+    <string name="gallery_before_after">Gallery Before / After</string>
+    <string name="gallery_no_media">No media</string>
+    <string name="recent_clips">Recent clips</string>
+
+    <!-- Camera Modes -->
+    <string name="mode_video">VIDEO</string>
+    <string name="mode_photo">PHOTO</string>
+    <string name="mode_strobe">STROBE</string>
+
+    <!-- Toolbar Buttons -->
+    <string name="btn_camera">← Camera</string>
+    <string name="btn_gallery">gallery</string>
+    <string name="btn_flip">flip</string>
+    <string name="btn_grid">grid</string>
+    <string name="btn_timer">timer</string>
+    <string name="btn_mic">mic</string>
+    <string name="btn_mic_muted">muted</string>
+    <string name="btn_lan">LAN</string>
+    <string name="btn_share">↗</string>
+    <string name="btn_delete">🗑</string>
+    <string name="btn_copy">Copy</string>
+    <string name="btn_save">Save</string>
+    <string name="btn_cancel">Cancel</string>
+
+    <!-- Comparison & Post Buttons -->
+    <string name="btn_before">Before (Original)</string>
+    <string name="btn_after">After (Fixed)</string>
+    <string name="btn_hold_before">Hold (Before)</string>
+    <string name="btn_process_local">⚡ Process on-device</string>
+    <string name="btn_process_desktop">Desktop</string>
+
+    <!-- Badges -->
+    <string name="badge_photo_synchro">SYNC PHOTO</string>
+    <string name="badge_after_fixed">AFTER (FIXED)</string>
+    <string name="badge_before_orig">BEFORE (ORIGINAL)</string>
+    <string name="badge_strip_photo">📸 Photo</string>
+    <string name="badge_strip_fixed">✓ Fixed</string>
+
+    <!-- Post-processing -->
+    <string name="menu_post_gallery_title">Post-processing / Gallery</string>
+    <string name="menu_quick_gallery">Quick Gallery Before / After</string>
+    <string name="menu_post_local">Post-process on device (Local)</string>
+    <string name="menu_post_lan">Send to LAN server (desktop)</string>
+    <string name="menu_lan_settings">LAN server settings</string>
+    <string name="msg_notify_post_no_analysis">Recorded without analysis: post-processing needed (tools/postprocess.sh).</string>
+    <string name="msg_notify_post_locked_format">Flicker locked on %d%% of the frames: no post-processing needed.</string>
+    <string name="msg_notify_post_unlocked_format">Flicker locked on only %d%% of the frames. Live correction is not available: post-processing is needed (tools/postprocess.sh).</string>
+    <string name="post_desc_banding_pumping">Anti-banding and luma pumping correction</string>
+    <string name="post_in_progress">Post-processing in progress…</string>
+    <string name="post_progress_local">On-device processing: 0 %</string>
+    <string name="post_progress_local_format">On-device processing: %d %%</string>
+    <string name="post_progress_lan">Sending to LAN server: 0 %</string>
+    <string name="post_progress_lan_format">LAN server: %d %%</string>
+    <string name="post_complete_seconds_format">Post-processing completed in %d s</string>
+    <string name="post_error_format">Failed: %s</string>
+    <string name="post_already_running">Post-processing is already running.</string>
+    <string name="post_clip_ready_format">Fixed clip: %s</string>
+    <string name="post_clip_ready">Fixed clip ready</string>
+    <string name="post_failed">post-processing failed</string>
+
+    <!-- LAN Server -->
+    <string name="lan_dialog_title">LAN Server (Offload &amp; Storage)</string>
+    <string name="lan_dialog_desc">Connect to the no-strobe server on your local PC / server to offload heavy computation or save phone storage.\n\nPC command:\nno-strobe-post serve --listen 0.0.0.0:8765 --token …</string>
+    <string name="lan_token_hint">Optional token (NO_STROBE_TOKEN)</string>
+    <string name="lan_btn_test">Test connection</string>
+    <string name="lan_err_invalid_url">Please enter a valid URL.</string>
+    <string name="lan_testing">Testing connection…</string>
+    <string name="lan_connected_format">Connected successfully (HTTP %d)</string>
+    <string name="lan_reachable_404">Host reachable (HTTP 404 on test endpoint)</string>
+    <string name="lan_unexpected_code_format">Unexpected response code: %d</string>
+    <string name="lan_err_conn_refused">Connection refused: verify that no-strobe-post is running on this port</string>
+    <string name="lan_err_timeout">Timed out: host not responding</string>
+    <string name="lan_err_unknown_host">Unknown host: verify IP address</string>
+    <string name="lan_err_generic_format">Error: %s</string>
+    <string name="lan_complete">LAN server post-processing complete!</string>
+    <string name="lan_error_format">LAN server error: %s</string>
+    <string name="lan_failed">LAN server failed</string>
+
+    <!-- Camera & Recording Messages -->
+    <string name="msg_no_camera">No camera detected on this device.</string>
+    <string name="msg_camera_busy">Camera unavailable (busy or disabled).</string>
+    <string name="msg_camera_disconnected">Camera disconnected. Restart the application.</string>
+    <string name="msg_camera_cant_record">This camera cannot record on this device.</string>
+    <string name="msg_camera_config_failed">Unable to configure camera on this device.</string>
+    <string name="msg_camera_perm_required">The camera permission is required.</string>
+    <string name="msg_mic_perm_required">Allow the microphone to record sound.</string>
+    <string name="msg_record_cant_start">Unable to start recording on this device.</string>
+    <string name="msg_processing_wait_record">Video processing in progress. Please wait before recording.</string>
+    <string name="msg_video_saved_format">Video saved to %s</string>
+    <string name="msg_video_saved">Video saved</string>
+    <string name="msg_photo_saved">📸 Photo saved</string>
+    <string name="msg_photo_failed">Failed to save photo</string>
+    <string name="msg_photo_error">Unable to take photo</string>
+    <string name="msg_cant_switch_mode_recording">Cannot change mode while recording</string>
+    <string name="msg_cant_switch_lens_recording">Cannot change lens while recording</string>
+    <string name="msg_cant_switch_camera_recording">Cannot change camera while recording</string>
+    <string name="msg_cant_open_gallery_recording">Cannot open gallery while recording</string>
+    <string name="msg_cant_open_menu_recording">Cannot open menu while recording</string>
+    <string name="msg_cant_process_recording">Cannot start post-processing while recording.</string>
+    <string name="msg_cant_send_recording">Cannot send while recording.</string>
+    <string name="msg_no_clip_to_process">No valid clip to process.</string>
+    <string name="msg_not_a_video_clip">Not a video clip: nothing to process.</string>
+    <string name="msg_no_clip_to_send">No clip to send at this time.</string>
+    <string name="msg_not_a_video_send">Not a video clip: nothing to send.</string>
+    <string name="msg_strobe_mode_slow">Slow strobe mode (1–20 Hz)</string>
+    <string name="msg_strobe_mode_fast">Fast LED mode</string>
+    <string name="msg_debug_taps_remaining_format">Debug menu in %d tap(s)…</string>
+
+    <!-- Dialogs & Deletion -->
+    <string name="dialog_low_storage_title">Low storage on device</string>
+    <string name="dialog_low_storage_msg">Only %d MB of free space remaining. Local re-encoding may fail. Would you like to offload processing to your LAN server?</string>
+    <string name="btn_use_lan_server">Use LAN server</string>
+    <string name="btn_continue_local">Continue locally</string>
+    <string name="dialog_delete_photo_title">Delete this photo?</string>
+    <string name="dialog_delete_clip_title">Delete this clip?</string>
+    <string name="dialog_delete_photo_msg">Do you want to delete this photo?</string>
+    <string name="dialog_delete_clip_msg">Do you want to delete this video clip (original and fixed versions)?</string>
+    <string name="toast_photo_deleted">Photo deleted</string>
+    <string name="toast_clip_deleted">Clip deleted</string>
+    <string name="share_photo_title">Share photo</string>
+    <string name="share_video_title">Share video</string>
+    <string name="share_error">Unable to share</string>
+    <string name="gallery_err_playback">Unable to play video</string>
+    <string name="gallery_err_empty">No media found in gallery</string>
+
+    <!-- Diagnostics -->
+    <string name="diag_dialog_title">Debug &amp; Diagnostic Menu</string>
+    <string name="diag_header">TECHNICAL DIAGNOSTIC REPORT</string>
+    <string name="diag_issue_github">GitHub Issue</string>
+    <string name="diag_toast_copied">Report copied to clipboard!</string>
+    <string name="diag_share_title">Share diagnostic report</string>
+</resources>

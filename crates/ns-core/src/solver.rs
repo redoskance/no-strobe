@@ -53,8 +53,13 @@ pub fn solve(est: &Estimate, limits: &CameraLimits) -> Vec<Candidate> {
         }
 
         // Gap: window inside the dark interval between flashes.
+        // For slow strobes (e.g. < 1.5 Hz), the dark interval spans many frames;
+        // the exposure window takes the full frame duration (frame_us - sustain_us).
         let dark = t * (1.0 - duty);
-        let e_gap = (dark - limits.sustain_us).min(limits.max_exposure_us);
+        let max_frame_e = frame_us - limits.sustain_us;
+        let e_gap = (dark - limits.sustain_us)
+            .min(limits.max_exposure_us)
+            .min(max_frame_e);
         if e_gap >= limits.min_exposure_us && e_gap + limits.sustain_us <= frame_us {
             out.push(Candidate {
                 mode: Mode::Gap,

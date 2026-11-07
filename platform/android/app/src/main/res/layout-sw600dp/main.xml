@@ -270,7 +270,7 @@
                 android:gravity="center"
                 android:paddingHorizontal="16dp"
                 android:paddingVertical="6dp"
-                android:text="VIDÉO"
+                android:text="@string/mode_video"
                 android:textColor="@color/m3_on_surface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -284,7 +284,7 @@
                 android:gravity="center"
                 android:paddingHorizontal="16dp"
                 android:paddingVertical="6dp"
-                android:text="PHOTO"
+                android:text="@string/mode_photo"
                 android:textColor="@color/m3_on_surface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -298,7 +298,7 @@
                 android:gravity="center"
                 android:paddingHorizontal="14dp"
                 android:paddingVertical="4dp"
-                android:text="STROBE"
+                android:text="@string/mode_strobe"
                 android:textColor="@color/m3_on_surface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -324,7 +324,7 @@
                 android:focusable="true"
                 android:gravity="center_horizontal"
                 android:paddingTop="8dp"
-                android:text="galerie"
+                android:text="@string/btn_gallery"
                 android:textColor="@color/icon_tint"
                 android:textSize="10sp"
                 android:visibility="gone" />
@@ -363,7 +363,7 @@
                 android:focusable="true"
                 android:gravity="center_horizontal"
                 android:paddingTop="8dp"
-                android:text="flip"
+                android:text="@string/btn_flip"
                 android:textColor="@color/icon_tint"
                 android:textSize="10sp" />
 

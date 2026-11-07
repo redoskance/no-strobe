@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">no-strobe</string>
+    <string name="gallery_title">Galerie</string>
+    <string name="gallery_before_after">Galerie Avant / Après</string>
+    <string name="gallery_no_media">Aucun média</string>
+    <string name="recent_clips">Clips récents</string>
+
+    <!-- Camera Modes -->
+    <string name="mode_video">VIDÉO</string>
+    <string name="mode_photo">PHOTO</string>
+    <string name="mode_strobe">STROBE</string>
+
+    <!-- Toolbar Buttons -->
+    <string name="btn_camera">← Caméra</string>
+    <string name="btn_gallery">galerie</string>
+    <string name="btn_flip">flip</string>
+    <string name="btn_grid">grille</string>
+    <string name="btn_timer">retardateur</string>
+    <string name="btn_mic">micro</string>
+    <string name="btn_mic_muted">coupé</string>
+    <string name="btn_lan">LAN</string>
+    <string name="btn_share">↗</string>
+    <string name="btn_delete">🗑</string>
+    <string name="btn_copy">Copier</string>
+    <string name="btn_save">Enregistrer</string>
+    <string name="btn_cancel">Annuler</string>
+
+    <!-- Comparison & Post Buttons -->
+    <string name="btn_before">Avant (Original)</string>
+    <string name="btn_after">Après (Corrigé)</string>
+    <string name="btn_hold_before">Maintenir (Avant)</string>
+    <string name="btn_process_local">⚡ Post-traiter en local</string>
+    <string name="btn_process_desktop">Desktop</string>
+
+    <!-- Badges -->
+    <string name="badge_photo_synchro">PHOTO SYNCHRO</string>
+    <string name="badge_after_fixed">APRÈS (CORRIGÉ)</string>
+    <string name="badge_before_orig">AVANT (ORIGINAL)</string>
+    <string name="badge_strip_photo">📸 Photo</string>
+    <string name="badge_strip_fixed">✓ Corrigé</string>
+
+    <!-- Post-processing -->
+    <string name="menu_post_gallery_title">Post-traitement / Galerie</string>
+    <string name="menu_quick_gallery">Galerie rapide Avant / Après</string>
+    <string name="menu_post_local">Post-traiter sur ce téléphone (Local)</string>
+    <string name="menu_post_lan">Envoyer au serveur LAN (desktop)</string>
+    <string name="menu_lan_settings">Paramètres serveur LAN</string>
+    <string name="msg_notify_post_no_analysis">Enregistré sans analyse : post-traitement nécessaire (tools/postprocess.sh).</string>
+    <string name="msg_notify_post_locked_format">Scintillement verrouillé sur %d %% des images : aucun post-traitement nécessaire.</string>
+    <string name="msg_notify_post_unlocked_format">Scintillement verrouillé sur seulement %d %% des images. Correction en direct indisponible : post-traitement nécessaire (tools/postprocess.sh).</string>
+    <string name="post_desc_banding_pumping">Correction anti-banding et pompage luma</string>
+    <string name="post_in_progress">Post-traitement en cours…</string>
+    <string name="post_progress_local">Post-traitement en local: 0 %</string>
+    <string name="post_progress_local_format">Post-traitement en local: %d %%</string>
+    <string name="post_progress_lan">Envoi vers le serveur LAN: 0 %</string>
+    <string name="post_progress_lan_format">Serveur LAN: %d %%</string>
+    <string name="post_complete_seconds_format">Post-traitement terminé en %d s</string>
+    <string name="post_error_format">Échec: %s</string>
+    <string name="post_already_running">Un post-traitement est déjà en cours d\'exécution.</string>
+    <string name="post_clip_ready_format">Clip corrigé: %s</string>
+    <string name="post_clip_ready">Clip corrigé prêt</string>
+    <string name="post_failed">échec du post-traitement</string>
+
+    <!-- LAN Server -->
+    <string name="lan_dialog_title">Serveur LAN (Déport &amp; Stockage)</string>
+    <string name="lan_dialog_desc">Connectez-vous au serveur no-strobe de votre PC / serveur local pour déporter le calcul lourd ou économiser le stockage du téléphone.\n\nCommande sur PC :\nno-strobe-post serve --listen 0.0.0.0:8765 --token …</string>
+    <string name="lan_token_hint">Token optionnel (NO_STROBE_TOKEN)</string>
+    <string name="lan_btn_test">Tester la connexion</string>
+    <string name="lan_err_invalid_url">Veuillez entrer une adresse URL valide.</string>
+    <string name="lan_testing">Test en cours…</string>
+    <string name="lan_connected_format">Connecté avec succès (HTTP %d)</string>
+    <string name="lan_reachable_404">Hôte joignable (HTTP 404 sur endpoint de test)</string>
+    <string name="lan_unexpected_code_format">Code de réponse inattendu: %d</string>
+    <string name="lan_err_conn_refused">Connexion refusée : vérifiez que no-strobe-post tourne sur le port</string>
+    <string name="lan_err_timeout">Délai dépassé : l\'hôte ne répond pas</string>
+    <string name="lan_err_unknown_host">Hôte inconnu : vérifiez l\'adresse IP</string>
+    <string name="lan_err_generic_format">Erreur : %s</string>
+    <string name="lan_complete">Correction sur serveur LAN terminée !</string>
+    <string name="lan_error_format">Erreur serveur LAN: %s</string>
+    <string name="lan_failed">échec serveur LAN</string>
+
+    <!-- Camera & Recording Messages -->
+    <string name="msg_no_camera">Aucune caméra détectée sur cet appareil.</string>
+    <string name="msg_camera_busy">Caméra indisponible (occupée ou désactivée).</string>
+    <string name="msg_camera_disconnected">Caméra déconnectée. Relancez l\'application.</string>
+    <string name="msg_camera_cant_record">Cette caméra ne peut pas enregistrer sur cet appareil.</string>
+    <string name="msg_camera_config_failed">Caméra impossible à configurer sur cet appareil.</string>
+    <string name="msg_camera_perm_required">L\'autorisation caméra est requise.</string>
+    <string name="msg_mic_perm_required">Autorisez le microphone pour enregistrer le son.</string>
+    <string name="msg_record_cant_start">Impossible de démarrer l\'enregistrement sur cet appareil.</string>
+    <string name="msg_processing_wait_record">Traitement vidéo en cours. Veuillez patienter avant d\'enregistrer.</string>
+    <string name="msg_video_saved_format">Vidéo enregistrée dans %s</string>
+    <string name="msg_video_saved">Vidéo enregistrée</string>
+    <string name="msg_photo_saved">📸 Photo enregistrée</string>
+    <string name="msg_photo_failed">Échec de l\'enregistrement de la photo</string>
+    <string name="msg_photo_error">Photo impossible</string>
+    <string name="msg_cant_switch_mode_recording">Impossible de changer de mode pendant l\'enregistrement</string>
+    <string name="msg_cant_switch_lens_recording">Impossible de changer de capteur pendant l\'enregistrement</string>
+    <string name="msg_cant_switch_camera_recording">Impossible de changer de caméra pendant l\'enregistrement</string>
+    <string name="msg_cant_open_gallery_recording">Impossible d\'ouvrir la galerie pendant l\'enregistrement</string>
+    <string name="msg_cant_open_menu_recording">Impossible d\'accéder au menu pendant l\'enregistrement</string>
+    <string name="msg_cant_process_recording">Impossible de lancer le post-traitement pendant un enregistrement.</string>
+    <string name="msg_cant_send_recording">Impossible d\'envoyer pendant l\'enregistrement.</string>
+    <string name="msg_no_clip_to_process">Aucun clip valide à traiter.</string>
+    <string name="msg_not_a_video_clip">Ce n\'est pas un clip vidéo: rien à post-traiter.</string>
+    <string name="msg_no_clip_to_send">Aucun clip à envoyer pour le moment.</string>
+    <string name="msg_not_a_video_send">Ce n\'est pas un clip vidéo: rien à envoyer.</string>
+    <string name="msg_strobe_mode_slow">Mode strobe lent (1–20 Hz)</string>
+    <string name="msg_strobe_mode_fast">Mode LED rapide</string>
+    <string name="msg_debug_taps_remaining_format">Menu debug dans %d tap(s)…</string>
+
+    <!-- Dialogs & Deletion -->
+    <string name="dialog_low_storage_title">Stockage faible sur le téléphone</string>
+    <string name="dialog_low_storage_msg">Il ne reste que %d Mo d\'espace libre. Le réencodage local risque d\'échouer. Souhaitez-vous déporter le traitement sur votre serveur LAN ?</string>
+    <string name="btn_use_lan_server">Utiliser le serveur LAN</string>
+    <string name="btn_continue_local">Continuer en local</string>
+    <string name="dialog_delete_photo_title">Supprimer cette photo ?</string>
+    <string name="dialog_delete_clip_title">Supprimer ce clip ?</string>
+    <string name="dialog_delete_photo_msg">Voulez-vous supprimer cette photo ?</string>
+    <string name="dialog_delete_clip_msg">Voulez-vous supprimer ce clip vidéo (original et version corrigée) ?</string>
+    <string name="toast_photo_deleted">Photo supprimée</string>
+    <string name="toast_clip_deleted">Clip supprimé</string>
+    <string name="share_photo_title">Partager la photo</string>
+    <string name="share_video_title">Partager la vidéo</string>
+    <string name="share_error">Partage impossible</string>
+    <string name="gallery_err_playback">Lecture de la vidéo impossible</string>
+    <string name="gallery_err_empty">Aucun média trouvé dans la galerie</string>
+
+    <!-- Diagnostics -->
+    <string name="diag_dialog_title">Menu Debug &amp; Diagnostic</string>
+    <string name="diag_header">RAPPORT DE DIAGNOSTIC TECHNIQUE</string>
+    <string name="diag_issue_github">Issue GitHub</string>
+    <string name="diag_toast_copied">Rapport copié dans le presse-papier !</string>
+    <string name="diag_share_title">Partager le rapport de diagnostic</string>
+</resources>

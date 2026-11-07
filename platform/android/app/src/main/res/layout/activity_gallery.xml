@@ -23,7 +23,7 @@
             android:focusable="true"
             android:gravity="center"
             android:paddingHorizontal="14dp"
-            android:text="← Caméra"
+            android:text="@string/btn_camera"
             android:textColor="@color/m3_on_surface"
             android:textSize="13sp"
             android:textStyle="bold" />
@@ -36,7 +36,7 @@
             android:layout_weight="1"
             android:ellipsize="middle"
             android:singleLine="true"
-            android:text="Galerie Avant / Après"
+            android:text="@string/gallery_before_after"
             android:textColor="@color/m3_on_surface"
             android:textSize="15sp"
             android:textStyle="bold" />
@@ -50,7 +50,7 @@
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
-            android:text="LAN"
+            android:text="@string/btn_lan"
             android:textColor="@color/m3_on_surface"
             android:textSize="11sp"
             android:textStyle="bold" />
@@ -63,7 +63,7 @@
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
-            android:text="↗"
+            android:text="@string/btn_share"
             android:textColor="@color/m3_on_surface"
             android:textSize="18sp" />
 
@@ -76,7 +76,7 @@
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
-            android:text="🗑"
+            android:text="@string/btn_delete"
             android:textColor="#DC2626"
             android:textSize="15sp" />
     </LinearLayout>
@@ -114,7 +114,7 @@
             android:background="@drawable/bg_lens_chip"
             android:paddingHorizontal="12dp"
             android:paddingVertical="6dp"
-            android:text="AVANT (ORIGINAL)"
+            android:text="@string/badge_before_orig"
             android:textColor="#FFFFFF"
             android:textSize="11sp"
             android:textStyle="bold" />
@@ -156,7 +156,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:text="Post-traitement en local: 0 %"
+                android:text="@string/post_progress_local"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 android:textStyle="bold" />
@@ -165,7 +165,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Correction anti-banding et pompage luma"
+                android:text="@string/post_desc_banding_pumping"
                 android:textColor="#B3FFFFFF"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -231,7 +231,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:text="Avant (Original)"
+                android:text="@string/btn_before"
                 android:textColor="@color/m3_on_surface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -246,7 +246,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:text="Après (Corrigé)"
+                android:text="@string/btn_after"
                 android:textColor="@color/m3_on_surface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -261,7 +261,7 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:paddingHorizontal="12dp"
-                android:text="Maintenir (Avant)"
+                android:text="@string/btn_hold_before"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:textStyle="bold" />
@@ -286,7 +286,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:text="⚡ Post-traiter en local"
+                android:text="@string/btn_process_local"
                 android:textColor="#FFFFFF"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -300,7 +300,7 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:paddingHorizontal="14dp"
-                android:text="Desktop"
+                android:text="@string/btn_process_desktop"
                 android:textColor="@color/m3_on_surface"
                 android:textSize="13sp" />
         </LinearLayout>
@@ -319,7 +319,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:layout_marginBottom="4dp"
-            android:text="Clips récents"
+            android:text="@string/recent_clips"
             android:textColor="@color/m3_on_surface_variant"
             android:textSize="11sp"
             android:textStyle="bold" />

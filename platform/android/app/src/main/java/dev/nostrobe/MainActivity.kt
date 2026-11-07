@@ -249,7 +249,7 @@ class MainActivity : AppCompatActivity() {
             debugTapCount++
             if (debugTapCount in 3..4) {
                 val remaining = 5 - debugTapCount
-                Toast.makeText(this, "Menu debug dans $remaining tap${if (remaining > 1) "s" else ""}...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.msg_debug_taps_remaining_format, remaining), Toast.LENGTH_SHORT).show()
             } else if (debugTapCount >= 5) {
                 debugTapCount = 0
                 showDebugDialog()
@@ -279,21 +279,21 @@ class MainActivity : AppCompatActivity() {
         }
         modeVideoBtn.setOnClickListener {
             if (recorder != null) {
-                Toast.makeText(this, "Impossible de changer de mode pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.msg_cant_switch_mode_recording), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             setCaptureMode(CaptureMode.VIDEO)
         }
         modePhotoBtn.setOnClickListener {
             if (recorder != null) {
-                Toast.makeText(this, "Impossible de changer de mode pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.msg_cant_switch_mode_recording), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             setCaptureMode(CaptureMode.PHOTO)
         }
         modeStrobeBtn.setOnClickListener {
             if (recorder != null) {
-                Toast.makeText(this, "Impossible de changer de mode pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.msg_cant_switch_mode_recording), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             setCaptureMode(CaptureMode.STROBE)
@@ -310,7 +310,7 @@ class MainActivity : AppCompatActivity() {
                 photoButton.isEnabled = !isProcessing && recorder == null
                 photoButton.alpha = if (isProcessing) 0.4f else 1.0f
                 if (isProcessing) {
-                    status.text = "Post-traitement en cours..."
+                    status.text = getString(R.string.post_in_progress)
                 }
             }
         }
@@ -367,7 +367,7 @@ class MainActivity : AppCompatActivity() {
                        (dcimDir.exists() && dcimDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true)
         if (hasMedia) {
             postButton.visibility = android.view.View.VISIBLE
-            postButton.text = "galerie"
+            postButton.text = getString(R.string.btn_gallery)
         }
         exposureBar = findViewById(R.id.exposureBar)
         exposureText = findViewById(R.id.exposureText)
@@ -507,7 +507,7 @@ class MainActivity : AppCompatActivity() {
         // No camera listed (an emulator without one, a TV box): say so instead of an index error.
         val option = lensOptions.getOrNull(lensIndex)
         if (option == null) {
-            Toast.makeText(this, "Aucune caméra détectée sur cet appareil.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.msg_no_camera), Toast.LENGTH_LONG).show()
             return
         }
         try {
@@ -515,7 +515,7 @@ class MainActivity : AppCompatActivity() {
             configureExposure(manager, option)
         } catch (e: CameraAccessException) {
             android.util.Log.w("nostrobe", "camera characteristics unavailable: ${e.message}")
-            Toast.makeText(this, "Caméra indisponible (occupée ou désactivée).", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.msg_camera_busy), Toast.LENGTH_LONG).show()
             return
         }
         val holder = surfaceView.holder
@@ -557,7 +557,7 @@ class MainActivity : AppCompatActivity() {
                         // Nothing is recorded: the recording ends with a message, and its empty file goes.
                         runOnUiThread {
                             if (recorder === r) {
-                                Toast.makeText(this, "Impossible de démarrer l'enregistrement.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(this, getString(R.string.msg_record_cant_start), Toast.LENGTH_LONG).show()
                                 endRecordingNow()
                             }
                         }
@@ -652,7 +652,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 1 && grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "The camera permission is required.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.msg_camera_perm_required), Toast.LENGTH_LONG).show()
             return
         }
         if (requestCode == 1 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED &&
@@ -754,7 +754,7 @@ class MainActivity : AppCompatActivity() {
             val isCurrentFront = current?.label?.startsWith("front") == true
             val isTargetFront = option.label.startsWith("front")
             if (isCurrentFront != isTargetFront || current?.logicalId != option.logicalId) {
-                Toast.makeText(this, "Impossible de changer de capteur pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.msg_cant_switch_lens_recording), Toast.LENGTH_SHORT).show()
                 return
             }
             // Same logical camera (back lenses 0.5x, 1x, 5x, auto): switch smoothly via zoom without restarting
@@ -797,7 +797,7 @@ class MainActivity : AppCompatActivity() {
     private fun flipCamera() {
         if (lensOptions.isEmpty()) return
         if (recorder != null) {
-            Toast.makeText(this, "Impossible de changer de caméra pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_cant_switch_camera_recording), Toast.LENGTH_SHORT).show()
             return
         }
         val isFront = lensOptions.getOrNull(lensIndex)?.label?.startsWith("front") == true
@@ -878,7 +878,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (OnDevicePost.isProcessing) {
-            Toast.makeText(this, "Traitement vidéo en cours. Veuillez patienter avant d'enregistrer.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_processing_wait_record), Toast.LENGTH_SHORT).show()
             return
         }
         photoButton.isEnabled = false
@@ -888,7 +888,7 @@ class MainActivity : AppCompatActivity() {
         if (!startRecording(conservative = false) && !startRecording(conservative = true)) {
             photoButton.isEnabled = !OnDevicePost.isProcessing
             photoButton.alpha = if (OnDevicePost.isProcessing) 0.4f else 1.0f
-            Toast.makeText(this, "Impossible de démarrer l'enregistrement sur cet appareil.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.msg_record_cant_start), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -909,7 +909,7 @@ class MainActivity : AppCompatActivity() {
         if (!conservative && hs == null && micOn && hasMicrophone && !withAudio) {
             // Ask once; this clip is recorded without sound, the next one will have it.
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 2)
-            Toast.makeText(this, "Allow the microphone to record sound.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_mic_perm_required), Toast.LENGTH_SHORT).show()
         }
         if (withAudio) r.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
         r.setVideoSource(MediaRecorder.VideoSource.SURFACE)
@@ -1077,17 +1077,17 @@ class MainActivity : AppCompatActivity() {
                         if (camera == null && isSurfaceReady && resumedNow) startCamera()
                     }, 1000)
                 } else {
-                    Toast.makeText(this, "Caméra déconnectée. Relancez l'application.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, getString(R.string.msg_camera_disconnected), Toast.LENGTH_LONG).show()
                 }
             }
             CAMERA_FAIL_NO_RECORD -> {
-                Toast.makeText(this, "Cette caméra ne peut pas enregistrer sur cet appareil.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.msg_camera_cant_record), Toast.LENGTH_LONG).show()
                 if (resumedNow && isSurfaceReady) startCamera()  // the preview goes on
             }
             CAMERA_FAIL_NO_SESSION ->
-                Toast.makeText(this, "Caméra impossible à configurer sur cet appareil.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.msg_camera_config_failed), Toast.LENGTH_LONG).show()
             else ->
-                Toast.makeText(this, "Caméra indisponible (occupée ou désactivée).", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.msg_camera_busy), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1101,12 +1101,12 @@ class MainActivity : AppCompatActivity() {
         if (!clip.exists() || clip.length() == 0L) return
         lastClip = clip
         postButton.visibility = android.view.View.VISIBLE
-        postButton.text = "galerie"
+        postButton.text = getString(R.string.btn_gallery)
         val name = clip.name
         Thread {
             val where = saveToGallery(clip, name)
             runOnUiThread {
-                Toast.makeText(this, if (where != null) "Vidéo enregistrée dans $where" else "Vidéo enregistrée",
+                Toast.makeText(this, if (where != null) getString(R.string.msg_video_saved_format, where) else getString(R.string.msg_video_saved),
                     Toast.LENGTH_SHORT).show()
             }
         }.start()
@@ -1141,12 +1141,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshToggles() {
-        micButton.text = if (micOn) "mic" else "muted"
+        micButton.text = if (micOn) getString(R.string.btn_mic) else getString(R.string.btn_mic_muted)
         micButton.isSelected = micOn
         val gridOn = gridView.visibility == android.view.View.VISIBLE
-        gridButton.text = "grid"
+        gridButton.text = getString(R.string.btn_grid)
         gridButton.isSelected = gridOn
-        timerButton.text = if (timerSecs == 0) "timer" else "${timerSecs}s"
+        timerButton.text = if (timerSecs == 0) getString(R.string.btn_timer) else "${timerSecs}s"
         timerButton.isSelected = timerSecs > 0
     }
 
@@ -1178,7 +1178,7 @@ class MainActivity : AppCompatActivity() {
         val strobe = mode == CaptureMode.STROBE
         if (strobe != wasStrobe) {
             strobeModeOn = strobe
-            Toast.makeText(this, if (strobe) "Mode strobe lent (1–20 Hz)" else "Mode LED rapide", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (strobe) getString(R.string.msg_strobe_mode_slow) else getString(R.string.msg_strobe_mode_fast), Toast.LENGTH_SHORT).show()
             camera?.stop(); camera = null
             if (isSurfaceReady) startCamera()
         }
@@ -1225,7 +1225,7 @@ class MainActivity : AppCompatActivity() {
         }
         val orientation = sensorOrientation()
         cam.takePicture(orientation, onFailure = {
-            runOnUiThread { Toast.makeText(this, "Photo impossible", Toast.LENGTH_SHORT).show() }
+            runOnUiThread { Toast.makeText(this, getString(R.string.msg_photo_error), Toast.LENGTH_SHORT).show() }
         }) { bytes ->
             savePhoto(bytes)
         }
@@ -1273,10 +1273,10 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             if (saved) {
                 postButton.visibility = android.view.View.VISIBLE
-                postButton.text = "galerie"
-                Toast.makeText(this, "📸 Photo enregistrée", Toast.LENGTH_SHORT).show()
+                postButton.text = getString(R.string.btn_gallery)
+                Toast.makeText(this, getString(R.string.msg_photo_saved), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Échec de l'enregistrement de la photo", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.msg_photo_failed), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1316,7 +1316,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openGallery(clip: File? = lastClip) {
         if (recorder != null) {
-            Toast.makeText(this, "Impossible d'ouvrir la galerie pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_cant_open_gallery_recording), Toast.LENGTH_SHORT).show()
             return
         }
         val intent = Intent(this, GalleryActivity::class.java).apply {
@@ -1328,17 +1328,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPostMenu() {
         if (recorder != null) {
-            Toast.makeText(this, "Impossible d'accéder au menu pendant l'enregistrement", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_cant_open_menu_recording), Toast.LENGTH_SHORT).show()
             return
         }
         val items = arrayOf(
-            "Galerie rapide Avant / Après",
-            "Post-traiter sur ce téléphone (Local)",
-            "Envoyer au serveur LAN (desktop)",
-            "Paramètres serveur LAN"
+            getString(R.string.menu_quick_gallery),
+            getString(R.string.menu_post_local),
+            getString(R.string.menu_post_lan),
+            getString(R.string.menu_lan_settings)
         )
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Post-traitement / Galerie")
+            .setTitle(getString(R.string.menu_post_gallery_title))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> openGallery()
@@ -1357,19 +1357,19 @@ class MainActivity : AppCompatActivity() {
     /** Brightness-pumping and anti-banding fix on the phone itself (no network). */
     private fun fixOnPhone() {
         if (recorder != null) {
-            Toast.makeText(this, "Impossible de lancer le post-traitement pendant un enregistrement.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_cant_process_recording), Toast.LENGTH_SHORT).show()
             return
         }
         if (OnDevicePost.isProcessing) {
-            Toast.makeText(this, "Un post-traitement est déjà en cours d'exécution.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.post_already_running), Toast.LENGTH_SHORT).show()
             return
         }
         val clip = lastClip
         if (clip == null || !clip.exists() || clip.length() == 0L) {
-            Toast.makeText(this, "Aucun clip valide à traiter.", Toast.LENGTH_SHORT).show(); return
+            Toast.makeText(this, getString(R.string.msg_no_clip_to_process), Toast.LENGTH_SHORT).show(); return
         }
         if (clip.extension != "mp4") {
-            Toast.makeText(this, "Ce n'est pas un clip vidéo: rien à post-traiter.", Toast.LENGTH_SHORT).show(); return
+            Toast.makeText(this, getString(R.string.msg_not_a_video_clip), Toast.LENGTH_SHORT).show(); return
         }
         val out = File(clip.parentFile, clip.nameWithoutExtension + "-fixed.mp4")
         postButton.isEnabled = false
@@ -1379,22 +1379,22 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.i("nostrobe", "phone post: start (${clip.length()} bytes)")
                 val lr = if (lastRowRate > 0.0) lastRowRate else (camera?.rowRateHz ?: 0.0)
                 OnDevicePost.fix(clip, out, lr) { pct ->
-                    runOnUiThread { status.text = "post-traitement local: $pct %" }
+                    runOnUiThread { status.text = getString(R.string.post_progress_local_format, pct) }
                 }
                 val fixedName = out.name
                 android.util.Log.i("nostrobe", "phone post: done in ${System.currentTimeMillis() - t0} ms, ${out.length()} bytes")
                 val where = saveToGallery(out, fixedName)
                 runOnUiThread {
-                    status.text = "post-traitement terminé en ${(System.currentTimeMillis() - t0) / 1000} s"
-                    Toast.makeText(this, if (where != null) "Clip corrigé: $where" else "Clip corrigé prêt",
+                    status.text = getString(R.string.post_complete_seconds_format, (System.currentTimeMillis() - t0) / 1000)
+                    Toast.makeText(this, if (where != null) getString(R.string.post_clip_ready_format, where) else getString(R.string.post_clip_ready),
                         Toast.LENGTH_LONG).show()
                     openGallery(clip)
                 }
             } catch (e: Exception) {
                 android.util.Log.w("nostrobe", "phone post failed: ${e.javaClass.simpleName}: ${e.message}")
                 runOnUiThread {
-                    status.text = "échec du post-traitement"
-                    Toast.makeText(this, "Échec du post-traitement: ${e.message}", Toast.LENGTH_LONG).show()
+                    status.text = getString(R.string.post_failed)
+                    Toast.makeText(this, getString(R.string.post_error_format, e.message ?: ""), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 runOnUiThread { postButton.isEnabled = true }
@@ -1404,15 +1404,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun sendToDesktop() {
         if (recorder != null) {
-            Toast.makeText(this, "Impossible d'envoyer pendant l'enregistrement.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.msg_cant_send_recording), Toast.LENGTH_SHORT).show()
             return
         }
         val clip = lastClip
         if (clip == null || !clip.exists()) {
-            Toast.makeText(this, "Aucun clip à envoyer pour le moment.", Toast.LENGTH_SHORT).show(); return
+            Toast.makeText(this, getString(R.string.msg_no_clip_to_send), Toast.LENGTH_SHORT).show(); return
         }
         if (clip.extension != "mp4") {
-            Toast.makeText(this, "Ce n'est pas un clip vidéo: rien à envoyer.", Toast.LENGTH_SHORT).show(); return
+            Toast.makeText(this, getString(R.string.msg_not_a_video_send), Toast.LENGTH_SHORT).show(); return
         }
         val base = LanServerConfig.getServerUrl(this)
         if (base.isBlank()) {
@@ -1426,21 +1426,21 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 DesktopPost.send(clip, out, base, token, rate) { pct ->
-                    runOnUiThread { status.text = "Serveur LAN: $pct %" }
+                    runOnUiThread { status.text = getString(R.string.post_progress_lan_format, pct) }
                 }
                 val name = "nostrobe-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
                     .format(java.util.Date()) + "-fixed.mp4"
                 val where = saveToGallery(out, name)
                 runOnUiThread {
-                    status.text = "post-traitement LAN terminé"
-                    Toast.makeText(this, if (where != null) "Clip corrigé: $where" else "Clip corrigé prêt",
+                    status.text = getString(R.string.lan_complete)
+                    Toast.makeText(this, if (where != null) getString(R.string.post_clip_ready_format, where) else getString(R.string.post_clip_ready),
                         Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.w("nostrobe", "desktop post failed: ${e.message}")
                 runOnUiThread {
-                    status.text = "échec serveur LAN"
-                    Toast.makeText(this, "Échec serveur LAN: ${e.message}", Toast.LENGTH_LONG).show()
+                    status.text = getString(R.string.lan_failed)
+                    Toast.makeText(this, getString(R.string.lan_error_format, e.message ?: ""), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 runOnUiThread { postButton.isEnabled = true }
@@ -1452,10 +1452,9 @@ class MainActivity : AppCompatActivity() {
     private fun notifyPost(total: Int, locked: Int) {
         val pct = if (total > 0) 100 * locked / total else 0
         val msg = when {
-            total == 0 -> "Recorded without analysis: post-processing needed (tools/postprocess.sh)."
-            pct >= 95 -> "Flicker locked on $pct% of the frames: no post-processing needed."
-            else -> "Flicker locked on only $pct% of the frames. Live correction is not available: " +
-                "post-processing is needed (tools/postprocess.sh)."
+            total == 0 -> getString(R.string.msg_notify_post_no_analysis)
+            pct >= 95 -> getString(R.string.msg_notify_post_locked_format, pct)
+            else -> getString(R.string.msg_notify_post_unlocked_format, pct)
         }
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
     }

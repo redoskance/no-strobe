@@ -143,7 +143,7 @@ class GalleryActivity : AppCompatActivity() {
 
         videoPlayer.setOnErrorListener { _, what, extra ->
             android.util.Log.w("nostrobe", "VideoView error: what=$what extra=$extra")
-            Toast.makeText(this, "Lecture de la vidéo impossible", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.gallery_err_playback), Toast.LENGTH_SHORT).show()
             true
         }
 
@@ -422,8 +422,8 @@ class GalleryActivity : AppCompatActivity() {
         mediaItems.sortByDescending { it.timestamp }
 
         if (mediaItems.isEmpty()) {
-            Toast.makeText(this, "Aucun média trouvé dans la galerie", Toast.LENGTH_SHORT).show()
-            galleryTitle.text = "Aucun média"
+            Toast.makeText(this, getString(R.string.gallery_err_empty), Toast.LENGTH_SHORT).show()
+            galleryTitle.text = getString(R.string.gallery_no_media)
             return
         }
 
@@ -475,8 +475,8 @@ class GalleryActivity : AppCompatActivity() {
 
             val badge = TextView(this).apply {
                 text = when {
-                    item.type == MediaType.PHOTO -> "📸 Photo"
-                    item.isFixed -> "✓ Corrigé"
+                    item.type == MediaType.PHOTO -> getString(R.string.badge_strip_photo)
+                    item.isFixed -> getString(R.string.badge_strip_fixed)
                     else -> "Original"
                 }
                 textSize = 10f
@@ -514,7 +514,7 @@ class GalleryActivity : AppCompatActivity() {
 
             photoViewer.visibility = View.VISIBLE
             modeBadge.visibility = View.VISIBLE
-            modeBadge.text = "PHOTO SYNCHRO"
+            modeBadge.text = getString(R.string.badge_photo_synchro)
             modeBadge.setBackgroundResource(R.drawable.bg_lens_chip)
 
             displayPhoto(item)
@@ -638,14 +638,14 @@ class GalleryActivity : AppCompatActivity() {
         val item = mediaItems.getOrNull(selectedIndex) ?: return
         if (item.type == MediaType.PHOTO) return
         if (isShowingFixed && item.isFixed) {
-            modeBadge.text = "APRÈS (CORRIGÉ)"
+            modeBadge.text = getString(R.string.badge_after_fixed)
             modeBadge.setBackgroundResource(R.drawable.bg_strip)
             btnAfter.setBackgroundResource(R.drawable.bg_strip)
             btnAfter.setTextColor(onSurface())
             btnBefore.setBackgroundResource(R.drawable.bg_tool)
             btnBefore.setTextColor(onSurface())
         } else {
-            modeBadge.text = "AVANT (ORIGINAL)"
+            modeBadge.text = getString(R.string.badge_before_orig)
             modeBadge.setBackgroundResource(R.drawable.bg_lens_chip)
             btnBefore.setBackgroundResource(R.drawable.bg_strip)
             btnBefore.setTextColor(onSurface())
@@ -694,12 +694,12 @@ class GalleryActivity : AppCompatActivity() {
         val srcLength = item.originalFile?.length() ?: 0L
         if (freeBytes < 500 * 1024 * 1024L || (srcLength > 0 && freeBytes < srcLength * 3)) {
             AlertDialog.Builder(this)
-                .setTitle("Stockage faible sur le téléphone")
-                .setMessage("Il ne reste que ${freeBytes / (1024 * 1024)} Mo d'espace libre. Le réencodage local risque d'échouer. Souhaitez-vous déporter le traitement sur votre serveur LAN ?")
-                .setPositiveButton("Utiliser le serveur LAN") { _, _ ->
+                .setTitle(getString(R.string.dialog_low_storage_title))
+                .setMessage(getString(R.string.dialog_low_storage_msg, freeBytes / (1024 * 1024)))
+                .setPositiveButton(getString(R.string.btn_use_lan_server)) { _, _ ->
                     startDesktopPostProcessing()
                 }
-                .setNegativeButton("Continuer en local") { _, _ ->
+                .setNegativeButton(getString(R.string.btn_continue_local)) { _, _ ->
                     executeLocalPost(item)
                 }
                 .show()
@@ -713,7 +713,7 @@ class GalleryActivity : AppCompatActivity() {
 
         postProgressContainer.visibility = View.VISIBLE
         postProgressBar.progress = 0
-        postProgressText.text = "Post-traitement en local: 0 %"
+        postProgressText.text = getString(R.string.post_progress_local)
         btnProcessLocal.isEnabled = false
 
         Thread {
@@ -735,7 +735,7 @@ class GalleryActivity : AppCompatActivity() {
                 OnDevicePost.fix(srcFile, dst, lineRateHz) { pct ->
                     runOnUiThread {
                         postProgressBar.progress = pct
-                        postProgressText.text = "Post-traitement en local: $pct %"
+                        postProgressText.text = getString(R.string.post_progress_local_format, pct)
                     }
                 }
                 saveToGallery(dst, dst.name)
@@ -744,7 +744,7 @@ class GalleryActivity : AppCompatActivity() {
                     btnProcessLocal.isEnabled = true
                     item.fixedFile = dst
                     isShowingFixed = true
-                    Toast.makeText(this, "Post-traitement terminé en ${(System.currentTimeMillis() - t0) / 1000}s", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.post_complete_seconds_format, (System.currentTimeMillis() - t0) / 1000), Toast.LENGTH_SHORT).show()
                     refreshStrip()
                     displayMedia(item, initial = false)
                 }
@@ -753,7 +753,7 @@ class GalleryActivity : AppCompatActivity() {
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
                     btnProcessLocal.isEnabled = true
-                    Toast.makeText(this, "Échec: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, getString(R.string.post_error_format, e.message ?: ""), Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
@@ -775,7 +775,7 @@ class GalleryActivity : AppCompatActivity() {
 
         postProgressContainer.visibility = View.VISIBLE
         postProgressBar.progress = 0
-        postProgressText.text = "Envoi vers le serveur LAN: 0 %"
+        postProgressText.text = getString(R.string.post_progress_lan)
         btnProcessDesktop.isEnabled = false
 
         Thread {
@@ -795,7 +795,7 @@ class GalleryActivity : AppCompatActivity() {
                 DesktopPost.send(srcFile, dst, base, token, lineRateHz) { pct ->
                     runOnUiThread {
                         postProgressBar.progress = pct
-                        postProgressText.text = "Serveur LAN: $pct %"
+                        postProgressText.text = getString(R.string.post_progress_lan_format, pct)
                     }
                 }
                 saveToGallery(dst, dst.name)
@@ -804,7 +804,7 @@ class GalleryActivity : AppCompatActivity() {
                     btnProcessDesktop.isEnabled = true
                     item.fixedFile = dst
                     isShowingFixed = true
-                    Toast.makeText(this, "Correction sur serveur LAN terminée !", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.lan_complete), Toast.LENGTH_SHORT).show()
                     refreshStrip()
                     displayMedia(item, initial = false)
                 }
@@ -812,7 +812,7 @@ class GalleryActivity : AppCompatActivity() {
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
                     btnProcessDesktop.isEnabled = true
-                    Toast.makeText(this, "Erreur serveur LAN: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, getString(R.string.lan_error_format, e.message ?: ""), Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
@@ -829,7 +829,7 @@ class GalleryActivity : AppCompatActivity() {
                 } catch (_: Exception) {
                     // Outside the FileProvider roots (the internal cache): share a copy from the external cache.
                     val dir = externalCacheDir ?: run {
-                        Toast.makeText(this, "Partage impossible", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.share_error), Toast.LENGTH_SHORT).show()
                         return
                     }
                     val copy = File(dir, target.name)
@@ -843,7 +843,7 @@ class GalleryActivity : AppCompatActivity() {
 
         val isPhoto = item.type == MediaType.PHOTO
         val mime = if (isPhoto) "image/jpeg" else "video/mp4"
-        val chooserTitle = if (isPhoto) "Partager la photo" else "Partager la vidéo"
+        val chooserTitle = if (isPhoto) getString(R.string.share_photo_title) else getString(R.string.share_video_title)
 
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = mime
@@ -856,25 +856,25 @@ class GalleryActivity : AppCompatActivity() {
     private fun confirmDeleteCurrentMedia() {
         val item = mediaItems.getOrNull(selectedIndex) ?: return
         val isPhoto = item.type == MediaType.PHOTO
-        val dialogTitle = if (isPhoto) "Supprimer cette photo ?" else "Supprimer ce clip ?"
+        val dialogTitle = if (isPhoto) getString(R.string.dialog_delete_photo_title) else getString(R.string.dialog_delete_clip_title)
         val dialogMsg = if (isPhoto) {
-            "Voulez-vous supprimer cette photo ?"
+            getString(R.string.dialog_delete_photo_msg)
         } else {
-            "Voulez-vous supprimer ce clip vidéo (original et version corrigée) ?"
+            getString(R.string.dialog_delete_clip_msg)
         }
 
         AlertDialog.Builder(this)
             .setTitle(dialogTitle)
             .setMessage(dialogMsg)
-            .setPositiveButton("Supprimer") { _, _ ->
+            .setPositiveButton(getString(R.string.btn_delete)) { _, _ ->
                 try { item.originalFile?.delete() } catch (_: Exception) {}
                 try { item.fixedFile?.delete() } catch (_: Exception) {}
                 item.originalUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
                 item.fixedUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
-                Toast.makeText(this, if (isPhoto) "Photo supprimée" else "Clip supprimé", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (isPhoto) getString(R.string.toast_photo_deleted) else getString(R.string.toast_clip_deleted), Toast.LENGTH_SHORT).show()
                 loadMedia()
             }
-            .setNegativeButton("Annuler", null)
+            .setNegativeButton(getString(R.string.btn_cancel), null)
             .show()
     }
 

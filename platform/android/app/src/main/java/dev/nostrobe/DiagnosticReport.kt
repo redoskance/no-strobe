@@ -176,7 +176,7 @@ object DiagnosticReport {
         }
 
         val reportHeader = TextView(activity).apply {
-            text = "RAPPORT DE DIAGNOSTIC TECHNIQUE"
+            text = activity.getString(R.string.diag_header)
             textSize = 11f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(activity.getColor(R.color.m3_on_surface_variant))
@@ -201,9 +201,9 @@ object DiagnosticReport {
         container.addView(scrollView)
 
         MaterialAlertDialogBuilder(activity)
-            .setTitle("Menu Debug & Diagnostic")
+            .setTitle(activity.getString(R.string.diag_dialog_title))
             .setView(container)
-            .setPositiveButton("Issue GitHub") { _, _ ->
+            .setPositiveButton(activity.getString(R.string.diag_issue_github)) { _, _ ->
                 val title = URLEncoder.encode("[Rapport] ${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}", "UTF-8")
                 val body = URLEncoder.encode(
                     "## Description du problème / Problem Description\n<!-- Décrivez ce que vous observez / Describe what happened -->\n\n" +
@@ -214,18 +214,18 @@ object DiagnosticReport {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                 activity.startActivity(intent)
             }
-            .setNeutralButton("Copier") { _, _ ->
+            .setNeutralButton(activity.getString(R.string.btn_copy)) { _, _ ->
                 val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("No-Strobe Diagnostic", reportMarkdown))
-                Toast.makeText(activity, "Rapport copié dans le presse-papier !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, activity.getString(R.string.diag_toast_copied), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Partager") { _, _ ->
+            .setNegativeButton(activity.getString(R.string.btn_share)) { _, _ ->
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_SUBJECT, "Rapport No-Strobe - ${Build.MODEL}")
                     putExtra(Intent.EXTRA_TEXT, reportMarkdown)
                 }
-                activity.startActivity(Intent.createChooser(shareIntent, "Partager le rapport de diagnostic"))
+                activity.startActivity(Intent.createChooser(shareIntent, activity.getString(R.string.diag_share_title)))
             }
             .show()
     }

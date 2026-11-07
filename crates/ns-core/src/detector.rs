@@ -153,7 +153,7 @@ pub fn fold_ratio(frames: &[(f64, f64)], period_us: f64) -> (f64, f64, f64) {
     }
     let t0 = frames[0].0;
     let mut best = (0.0, period_us);
-    for k in -6..=6 {
+    for k in -16..=16 {
         let p = period_us * (1.0 + 0.005 * k as f64);
         let w = 2.0 * std::f64::consts::PI / p;
         let (mut c, mut s) = (0.0, 0.0);

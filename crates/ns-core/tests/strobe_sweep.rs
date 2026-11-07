@@ -77,6 +77,7 @@ fn ok(o: &Outcome) -> bool {
 ///   The phone may run at 30 fps even when 60 is asked (some do in a dark room);
 /// - a flash of about half the period seen through a window of most of a 33 ms frame at 7 or 10 Hz is a
 ///   smooth wave of two or three frames: the edges are lost.
+
 #[test]
 fn strobe_from_1_to_20_hz_locks_on_the_right_period_in_band() {
     let all = vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0];
@@ -92,9 +93,8 @@ fn strobe_from_1_to_20_hz_locks_on_the_right_period_in_band() {
         // A beacon that is lit half of the time or more: the median of the luma sits on the lit level, and
         // the dark gaps are the events.
         (60.0, 0.5, vec![2.0, 3.0, 5.0, 7.0, 10.0, 15.0]),
-        // (17 Hz at 70 % duty is a smooth wave: every second dip stays shallow and the events come every other
-        // cycle, which reads as 8.5 Hz once the lock waits for a second of train. Not asserted.)
-        (60.0, 0.7, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 20.0]),
+        // A strobe with 70 % duty at 17 Hz: the dips are disambiguated by luma folding at P vs P/2.
+        (60.0, 0.7, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0]),
         (30.0, 0.5, vec![1.0, 2.0, 3.0, 5.0]),
         (30.0, 0.7, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
     ] {

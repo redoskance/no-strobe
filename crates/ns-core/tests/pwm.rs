@@ -560,7 +560,7 @@ fn a_noisy_blind_lock_does_not_wander() {
         let mut seed = 7u64;
         let mut c = PwmController::new(phone_limits(), 0.0);
         let mut phase = 0.0;
-        let mut frame = |e: f64, phase: f64, seed: &mut u64| -> Vec<f64> {
+        let frame = |e: f64, phase: f64, seed: &mut u64| -> Vec<f64> {
             profile_for(e, f_hz, phase, 0.3, LINE_RATE, ROWS).iter().map(|v| v + noise(seed, amp)).collect()
         };
         let mut last = c.on_profile(&frame(1000.0, phase, &mut seed));

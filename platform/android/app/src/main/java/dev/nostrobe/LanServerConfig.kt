@@ -36,6 +36,7 @@ object LanServerConfig {
      * Tries a quick HTTP connection to /health or /fix.
      */
     fun testConnection(
+        context: Context,
         baseUrl: String,
         token: String,
         onResult: (success: Boolean, message: String) -> Unit
@@ -82,18 +83,18 @@ object LanServerConfig {
                 }
 
                 if (code in 200..499 && code != 404) {
-                    onResult(true, "Connecté avec succès (HTTP $code)")
+                    onResult(true, context.getString(R.string.lan_connected_format, code))
                 } else if (code == 404) {
-                    onResult(true, "Hôte joignable (HTTP 404 sur endpoint de test)")
+                    onResult(true, context.getString(R.string.lan_reachable_404))
                 } else {
-                    onResult(false, "Code de réponse inattendu: $code")
+                    onResult(false, context.getString(R.string.lan_unexpected_code_format, code))
                 }
             } catch (e: Exception) {
                 val msg = when (e) {
-                    is java.net.ConnectException -> "Connexion refusée : vérifiez que no-strobe-post tourne sur le port"
-                    is java.net.SocketTimeoutException -> "Délai dépassé : l'hôte ne répond pas"
-                    is java.net.UnknownHostException -> "Hôte inconnu : vérifiez l'adresse IP"
-                    else -> "Erreur : ${e.localizedMessage ?: e.javaClass.simpleName}"
+                    is java.net.ConnectException -> context.getString(R.string.lan_err_conn_refused)
+                    is java.net.SocketTimeoutException -> context.getString(R.string.lan_err_timeout)
+                    is java.net.UnknownHostException -> context.getString(R.string.lan_err_unknown_host)
+                    else -> context.getString(R.string.lan_err_generic_format, e.localizedMessage ?: e.javaClass.simpleName)
                 }
                 onResult(false, msg)
             }
@@ -136,7 +137,7 @@ object LanServerConfig {
         }
 
         val desc = TextView(activity).apply {
-            text = "Connectez-vous au serveur no-strobe de votre PC / serveur local pour déporter le calcul lourd ou économiser le stockage du téléphone.\n\nCommande sur PC :\nno-strobe-post serve --listen 0.0.0.0:8765 --token ..."
+            text = activity.getString(R.string.lan_dialog_desc)
             textSize = 12f
             setTextColor(0xFF888888.toInt())
             setPadding(0, 0, 0, (12 * dp).toInt())
@@ -154,7 +155,7 @@ object LanServerConfig {
         layout.addView(urlInput)
 
         val tokenInput = EditText(activity).apply {
-            hint = "Token optionnel (NO_STROBE_TOKEN)"
+            hint = activity.getString(R.string.lan_token_hint)
             setText(getServerToken(activity))
             setSingleLine()
         }
@@ -167,7 +168,7 @@ object LanServerConfig {
         }
 
         val testBtn = Button(activity).apply {
-            text = "Tester la connexion"
+            text = activity.getString(R.string.lan_btn_test)
             setBackgroundResource(R.drawable.bg_tool)
             setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_on_surface))
             setOnClickListener {
@@ -175,15 +176,15 @@ object LanServerConfig {
                 if (urlToTest.isBlank()) {
                     statusText.visibility = View.VISIBLE
                     statusText.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_status_recording))
-                    statusText.text = "Veuillez entrer une adresse URL valide."
+                    statusText.text = activity.getString(R.string.lan_err_invalid_url)
                     return@setOnClickListener
                 }
                 statusText.visibility = View.VISIBLE
                 statusText.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_status_scanning))
-                statusText.text = "Test en cours..."
+                statusText.text = activity.getString(R.string.lan_testing)
                 isEnabled = false
 
-                testConnection(urlToTest, tokenInput.text.toString().trim()) { success, msg ->
+                testConnection(activity, urlToTest, tokenInput.text.toString().trim()) { success, msg ->
                     activity.runOnUiThread {
                         isEnabled = true
                         statusText.visibility = View.VISIBLE
@@ -202,15 +203,15 @@ object LanServerConfig {
         layout.addView(statusText)
 
         AlertDialog.Builder(activity)
-            .setTitle("Serveur LAN (Déport & Stockage)")
+            .setTitle(activity.getString(R.string.lan_dialog_title))
             .setView(layout)
-            .setPositiveButton("Enregistrer") { _, _ ->
+            .setPositiveButton(activity.getString(R.string.btn_save)) { _, _ ->
                 val newUrl = urlInput.text.toString().trim()
                 val newToken = tokenInput.text.toString().trim()
                 prefs.edit().putString(KEY_URL, newUrl).putString(KEY_TOKEN, newToken).apply()
                 onSaved?.invoke(newUrl, newToken)
             }
-            .setNegativeButton("Annuler", null)
+            .setNegativeButton(activity.getString(R.string.btn_cancel), null)
             .show()
     }
 }

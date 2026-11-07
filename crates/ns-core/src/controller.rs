@@ -1,5 +1,5 @@
 use crate::camera::CameraLimits;
-use crate::detector::{coarse_period, fit_from_pulses, PulseTracker};
+use crate::detector::{coarse_period, fit_from_pulses, pulse_period, PulseTracker};
 use crate::signal::{Frame, SignalBuffer};
 use crate::solver::{solve, Mode};
 
@@ -62,7 +62,7 @@ impl Controller {
         let exposure = search_exposure(&limits);
         Self {
             limits,
-            buf: SignalBuffer::new(120),
+            buf: SignalBuffer::new(240),
             tracker: None,
             state: State::Search,
             warmup_frames: 45,
@@ -114,7 +114,12 @@ impl Controller {
         let threshold = mean + 0.6 * std;
         let pulses = self.buf.rising_edge_times(threshold);
 
-        let guess = coarse.map(|(p, _)| p).unwrap_or(frame_us * 2.0);
+        // The pulse times give the period without the autocorrelation's multiples and without the
+        // frame-rate aliasing of the spacing grid; the autocorrelation stays as the fallback.
+        let guess = pulse_period(&pulses, 1.0, max_hz.max(4.0))
+            .map(|(p, _)| p)
+            .or_else(|| coarse.map(|(p, _)| p))
+            .unwrap_or(frame_us * 2.0);
         if let Some(est) = fit_from_pulses(&pulses, guess, frame_us) {
             if est.confidence >= 0.45 && pulses.len() >= 4 {
                 self.tracker = Some(PulseTracker::new(est));

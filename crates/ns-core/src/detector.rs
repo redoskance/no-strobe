@@ -80,6 +80,58 @@ fn interp(x: &[f64], pos: f64) -> f64 {
     x[i] * (1.0 - f) + x[i + 1] * f
 }
 
+/// Period of a pulse train from the pulse TIMES, by epoch folding (the Rayleigh statistic).
+///
+/// For a candidate frequency `f` every pulse time becomes a phase `2 pi f t`; the length of the mean
+/// phasor `|sum exp(i 2 pi f t)| / N` is 1 when all the pulses are in phase and about `1/sqrt(N)`
+/// when they are not. A strobe seen through frames (30 or 60 per second) shows pulses on some of its
+/// cycles only, at times quantised to the frame clock, so the spacing of the pulses is a whole
+/// number of periods that is not known: the statistic does not need it. Sub-harmonics cancel (the
+/// pulses of consecutive cycles fall in opposite phases) and harmonics tie with the fundamental, so
+/// the SMALLEST frequency whose statistic is within 10 % of the best wins. `pulses` are in
+/// microseconds, the band in Hz. Returns (period_us, statistic).
+pub fn pulse_period(pulses: &[f64], min_hz: f64, max_hz: f64) -> Option<(f64, f64)> {
+    let n = pulses.len();
+    if n < 4 || min_hz <= 0.0 || max_hz <= min_hz {
+        return None;
+    }
+    let span = pulses[n - 1] - pulses[0];
+    if span <= 0.0 {
+        return None;
+    }
+    // A frequency resolution of a tenth of the inverse span keeps every pulse within 0.1 cycle.
+    let df = (0.1e6 / span).max(0.005);
+    let t0 = pulses[0];
+    let mut grid: Vec<(f64, f64)> = Vec::new();
+    let mut f = min_hz;
+    while f <= max_hz {
+        let w = 2.0 * std::f64::consts::PI * f / 1e6;
+        let (mut c, mut s_) = (0.0, 0.0);
+        for p in pulses {
+            let a = w * (p - t0);
+            c += a.cos();
+            s_ += a.sin();
+        }
+        grid.push((f, (c * c + s_ * s_).sqrt() / n as f64));
+        f += df;
+    }
+    let best = grid.iter().map(|g| g.1).fold(0.0f64, f64::max);
+    if best <= 0.0 {
+        return None;
+    }
+    // The smallest frequency near the best that is a local maximum (the band edges count: a 1 Hz
+    // strobe searched from 1 Hz peaks at the edge, and was read as its first harmonic).
+    for i in 0..grid.len() {
+        let (f, r) = grid[i];
+        let left = if i == 0 { f64::MIN } else { grid[i - 1].1 };
+        let right = if i + 1 == grid.len() { f64::MIN } else { grid[i + 1].1 };
+        if r >= 0.9 * best && r >= left && r >= right {
+            return Some((1e6 / f, r));
+        }
+    }
+    None
+}
+
 /// Least-squares fit of flash times to `phase + m * period`, where m is an integer cycle
 /// count. The seed comes from the autocorrelation guess, refined by the pulse spacings
 /// `median / k`. Two guards keep the seed honest: spacings equal to the frame period are a

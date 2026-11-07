@@ -125,6 +125,61 @@ impl Controller {
         }
     }
 
+    /// Seed the controller with an already-locked frequency and exposure duration, so recording
+    /// sessions or reopened camera sessions carry the lock without regressing to search.
+    pub fn seed_lock(&mut self, exposure_us: f64, f_hz: f64) {
+        if f_hz <= 0.0 {
+            return;
+        }
+        let period_us = 1e6 / f_hz;
+        let est = Estimate {
+            period_us,
+            phase_us: 0.0,
+            duty: 0.1,
+            confidence: 0.85,
+        };
+        let tracker = PulseTracker::new(est);
+        self.tracker = Some(tracker);
+        self.state = State::Locked;
+        self.validated_us = 0.0;
+        self.probing = false;
+        self.warmup_frames = 0;
+        self.settle_frames = 0;
+        let candidates = solve(&est, &self.limits);
+        let best_exp = if !candidates.is_empty() {
+            candidates[0].exposure_us
+        } else {
+            exposure_us
+        };
+        let best_mode = if !candidates.is_empty() {
+            candidates[0].mode
+        } else {
+            Mode::Gap
+        };
+        let best_fps = if !candidates.is_empty() {
+            candidates[0].fps
+        } else {
+            self.limits
+                .supported_fps
+                .iter()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .copied()
+                .unwrap_or(60.0)
+        };
+        let iso = (self.limits.min_iso * (self.limits.max_exposure_us / best_exp))
+            .clamp(self.limits.min_iso, self.limits.max_iso);
+        self.last_command = Command {
+            exposure_us: best_exp,
+            fps: best_fps,
+            iso,
+            mode: best_mode,
+            state: State::Locked,
+            period_us,
+            confidence: 0.85,
+            drift_us_per_frame: 0.0,
+        };
+    }
+
     /// Times of the pulses of the buffer: the luma minus a LOCAL baseline (a centred running median of about
     /// two seconds), then edges with hysteresis.
     ///
@@ -320,6 +375,8 @@ impl Controller {
             }
             self.validated_us = now;
             // The buffer holds the probe only: the lock goes on from here.
+        } else if self.validated_us == 0.0 {
+            self.validated_us = now;
         } else if now - self.validated_us >= REVALIDATE_AFTER_US {
             self.probing = true;
             self.buf.clear();

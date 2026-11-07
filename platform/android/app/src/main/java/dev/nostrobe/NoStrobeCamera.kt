@@ -79,6 +79,7 @@ class NoStrobeCamera(
     /** A lock found before this camera was reopened (to record): start on it, do not search. */
     private val seedExposureUs: Double = 0.0,
     private val seedHz: Double = 0.0,
+    private val seedBudget: Double = 0.0,
     /** Recording without a lock: stay on auto-exposure, probing exposures would ruin the clip. */
     private val holdAutoNoSeed: Boolean = false,
     /** The camera failed or cannot record here: one of the CAMERA_FAIL_* codes. */
@@ -211,8 +212,8 @@ class NoStrobeCamera(
     // before the shutter goes manual. A shorter exposure then gets a proportionally higher
     // ISO, so every trial of the closed loop sees the same image brightness (the residual
     // banding amplitude is only comparable between trials at equal brightness).
-    private var budgetUsIso = 0.0
-    private var latestAutoBudget = 0.0
+    private var budgetUsIso = seedBudget
+    private var latestAutoBudget = seedBudget
     private var autoWait = 0
     /** The auto-exposure settle window is over: the gate must not re-arm, even with no budget. */
     private var autoSettled = false
@@ -417,6 +418,10 @@ class NoStrobeCamera(
             pwm = null
         } else {
             strobe = NsJni.create(limits)
+            if (seedExposureUs > 0.0 && seedHz > 0.0) {
+                Log.i(TAG, "strobe starting locked: %.0f us at %.1f Hz".format(seedExposureUs, seedHz))
+                strobe?.seed(seedExposureUs, seedHz)
+            }
         }
 
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
@@ -1239,8 +1244,9 @@ class NoStrobeCamera(
             avgProcessUs = if (avgProcessUs == 0L) elapsedUs else (avgProcessUs * 4 + elapsedUs) / 5
             // ISO that keeps the metered brightness at this exposure; the controller's own
             // ISO has no reference for the scene and is ignored once the budget is known.
-            val applied = if (budgetUsIso > 0.0) {
-                cmd.copy(iso = (budgetUsIso * Math.pow(2.0, evBias.toDouble()) / cmd.exposureUs).coerceIn(isoMin, isoMax))
+            val effectiveBudget = if (budgetUsIso > 0.0) budgetUsIso else latestAutoBudget
+            val applied = if (effectiveBudget > 0.0) {
+                cmd.copy(iso = (effectiveBudget * Math.pow(2.0, evBias.toDouble()) / cmd.exposureUs).coerceIn(isoMin, isoMax))
             } else {
                 cmd
             }

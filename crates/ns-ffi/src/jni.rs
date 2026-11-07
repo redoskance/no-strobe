@@ -81,6 +81,21 @@ pub extern "system" fn Java_dev_nostrobe_NsJni_nativeDestroy(
     }
 }
 
+#[no_mangle]
+pub extern "system" fn Java_dev_nostrobe_NsJni_nativeSeedStrobe(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    exposure_us: jdouble,
+    f_hz: jdouble,
+) {
+    if handle == 0 {
+        return;
+    }
+    let ctrl = unsafe { &mut *(handle as *mut Controller) };
+    ctrl.seed_lock(exposure_us, f_hz);
+}
+
 /// PWM controller handle. `line_rate_hz` is the sensor row readout rate; pass 0
 /// when the device does not publish it.
 #[no_mangle]

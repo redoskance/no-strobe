@@ -98,6 +98,7 @@ class MainActivity : AppCompatActivity() {
     // recorder surface and must start on it, not search (probing exposures ruin a clip).
     private var carryExposureUs = 0.0
     private var carryHz = 0.0
+    private var carryBudget = 0.0
     private lateinit var zoomBar: SeekBar
     private lateinit var zoomText: TextView
     private lateinit var exposureBar: SeekBar
@@ -486,6 +487,19 @@ class MainActivity : AppCompatActivity() {
         recreate()
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val postClipPath = intent.getStringExtra("post_clip")
+        if (!postClipPath.isNullOrBlank()) {
+            val f = File(postClipPath)
+            if (f.exists()) {
+                lastClip = f
+                fixOnPhone()
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         android.util.Log.i("nostrobe", "lifecycle: onResume")
@@ -572,6 +586,7 @@ class MainActivity : AppCompatActivity() {
             simFlickerHz = if (debugBuild) intent.getDoubleExtra("sim_hz", 0.0) else 0.0,
             seedExposureUs = if (recorder != null) carryExposureUs else 0.0,
             seedHz = if (recorder != null) carryHz else 0.0,
+            seedBudget = if (recorder != null) carryBudget else 0.0,
             holdAutoNoSeed = recorder != null,
             forceAutoOnly = debugBuild && intent.getBooleanExtra("force_auto_only", false),
             allow32BitAnalysis = debugBuild && intent.getBooleanExtra("allow_32bit", false),
@@ -1065,6 +1080,7 @@ class MainActivity : AppCompatActivity() {
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED
         carryExposureUs = carriedLock.first
         carryHz = carriedLock.second
+        carryBudget = effectiveBudget
         recordButton.isSelected = true
         updateModeUI()
         val w = java.io.FileWriter(File(externalCacheDir ?: cacheDir, "clip.csv"))
@@ -1131,6 +1147,7 @@ class MainActivity : AppCompatActivity() {
         hsFps = 0
         carryExposureUs = 0.0
         carryHz = 0.0
+        carryBudget = 0.0
         camera?.stop(); camera = null
         recordButton.isSelected = false
         recordButton.isEnabled = !OnDevicePost.isProcessing
@@ -1490,7 +1507,8 @@ class MainActivity : AppCompatActivity() {
         if (clip.extension != "mp4") {
             Toast.makeText(this, getString(R.string.msg_not_a_video_clip), Toast.LENGTH_SHORT).show(); return
         }
-        val out = File(clip.parentFile, clip.nameWithoutExtension + "-fixed.mp4")
+        val clipsDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
+        val out = File(clipsDir, clip.nameWithoutExtension + "-fixed.mp4")
         postButton.isEnabled = false
         Thread {
             try {

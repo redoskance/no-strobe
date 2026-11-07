@@ -26,6 +26,8 @@ object NsJni {
 
     private external fun nativeOnFrame(handle: Long, tUs: Double, luminance: Double, out: DoubleArray)
 
+    private external fun nativeSeedStrobe(handle: Long, exposureUs: Double, fHz: Double)
+
     private external fun nativeDestroy(handle: Long)
 
     private external fun nativeCreatePwm(
@@ -274,6 +276,11 @@ object NsJni {
         fun onFrame(tUs: Double, luminance: Double): NsCommand {
             nativeOnFrame(handle, tUs, luminance, out)
             return command(out)
+        }
+
+        /** Start locked on a strobe found earlier, instead of searching again. */
+        fun seed(exposureUs: Double, fHz: Double) {
+            nativeSeedStrobe(handle, exposureUs, fHz)
         }
 
         fun close() {

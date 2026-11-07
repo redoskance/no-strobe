@@ -326,8 +326,11 @@ impl PulseTracker {
         let pulses = &fresh[..];
         if pulses.is_empty() {
             self.frames_since_pulse += 1;
+            // A working lock removes pulses (gap mode avoids them, integrate mode flattens them),
+            // so absence of pulses while locked is expected. Only decay confidence slowly
+            // down to a baseline (0.7), not 0.0.
             if self.frames_since_pulse > 30 {
-                self.est.confidence *= 0.9;
+                self.est.confidence = (self.est.confidence * 0.99).max(0.7);
             }
             return;
         }

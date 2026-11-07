@@ -115,7 +115,7 @@
             android:paddingHorizontal="12dp"
             android:paddingVertical="6dp"
             android:text="@string/badge_before_orig"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/m3_on_surface"
             android:textSize="11sp"
             android:textStyle="bold" />
 
@@ -128,7 +128,7 @@
             android:background="@drawable/bg_strip"
             android:gravity="center"
             android:text="▶"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/m3_on_surface"
             android:textSize="28sp"
             android:visibility="gone" />
 
@@ -262,7 +262,7 @@
                 android:gravity="center"
                 android:paddingHorizontal="12dp"
                 android:text="@string/btn_hold_before"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/m3_on_surface"
                 android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -287,7 +287,7 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:text="@string/btn_process_local"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/m3_on_surface"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 

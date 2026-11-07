@@ -468,7 +468,9 @@ class GalleryActivity : AppCompatActivity() {
             val title = TextView(this).apply {
                 text = item.dateDisplay
                 textSize = 12f
-                setTextColor(if (isSelected) 0xFF006A60.toInt() else 0xFF707070.toInt())
+                // Theme colours: a fixed dark teal vanished on the dark theme's teal chip.
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    context, if (isSelected) R.color.m3_on_primary_container else R.color.m3_on_surface_variant))
                 textStyle(isSelected)
             }
             itemView.addView(title)

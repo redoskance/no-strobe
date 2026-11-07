@@ -631,6 +631,9 @@ class GalleryActivity : AppCompatActivity() {
         }
     }
 
+    /** Text colour of the glass buttons: dark on the light theme, light on the dark one. */
+    private fun onSurface(): Int = androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface)
+
     private fun updateBadge() {
         val item = mediaItems.getOrNull(selectedIndex) ?: return
         if (item.type == MediaType.PHOTO) return
@@ -638,16 +641,16 @@ class GalleryActivity : AppCompatActivity() {
             modeBadge.text = "APRÈS (CORRIGÉ)"
             modeBadge.setBackgroundResource(R.drawable.bg_strip)
             btnAfter.setBackgroundResource(R.drawable.bg_strip)
-            btnAfter.setTextColor(0xFFFFFFFF.toInt())
+            btnAfter.setTextColor(onSurface())
             btnBefore.setBackgroundResource(R.drawable.bg_tool)
-            btnBefore.setTextColor(0xFF000000.toInt())
+            btnBefore.setTextColor(onSurface())
         } else {
             modeBadge.text = "AVANT (ORIGINAL)"
             modeBadge.setBackgroundResource(R.drawable.bg_lens_chip)
             btnBefore.setBackgroundResource(R.drawable.bg_strip)
-            btnBefore.setTextColor(0xFFFFFFFF.toInt())
+            btnBefore.setTextColor(onSurface())
             btnAfter.setBackgroundResource(R.drawable.bg_tool)
-            btnAfter.setTextColor(0xFF000000.toInt())
+            btnAfter.setTextColor(onSurface())
         }
     }
 

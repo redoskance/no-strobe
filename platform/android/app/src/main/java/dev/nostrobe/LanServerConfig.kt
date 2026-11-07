@@ -169,17 +169,17 @@ object LanServerConfig {
         val testBtn = Button(activity).apply {
             text = "Tester la connexion"
             setBackgroundResource(R.drawable.bg_tool)
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_on_surface))
             setOnClickListener {
                 val urlToTest = urlInput.text.toString().trim()
                 if (urlToTest.isBlank()) {
                     statusText.visibility = View.VISIBLE
-                    statusText.setTextColor(Color.RED)
+                    statusText.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_status_recording))
                     statusText.text = "Veuillez entrer une adresse URL valide."
                     return@setOnClickListener
                 }
                 statusText.visibility = View.VISIBLE
-                statusText.setTextColor(Color.YELLOW)
+                statusText.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_status_scanning))
                 statusText.text = "Test en cours..."
                 isEnabled = false
 
@@ -188,10 +188,10 @@ object LanServerConfig {
                         isEnabled = true
                         statusText.visibility = View.VISIBLE
                         if (success) {
-                            statusText.setTextColor(0xFF4CAF50.toInt()) // Green
+                            statusText.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_status_locked))
                             statusText.text = "✓ $msg"
                         } else {
-                            statusText.setTextColor(0xFFE53935.toInt()) // Red
+                            statusText.setTextColor(androidx.core.content.ContextCompat.getColor(activity, R.color.m3_status_recording))
                             statusText.text = "✗ $msg"
                         }
                     }

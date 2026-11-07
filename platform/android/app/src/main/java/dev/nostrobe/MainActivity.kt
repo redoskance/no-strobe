@@ -214,6 +214,8 @@ class MainActivity : AppCompatActivity() {
         currentPreviewSize = initialSize
         surfaceView.holder.setFixedSize(initialSize.width, initialSize.height)
         aspectLayout?.setAspectRatio(initialSize.width, initialSize.height)
+        aspectLayout?.setRelativeOrientation(runCatching { sensorOrientation() }.getOrDefault(-1))
+        stackIfUpright(aspectLayout)
         focusRing = findViewById(R.id.focusRing)
         val pinch = android.view.ScaleGestureDetector(this,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -474,7 +476,7 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.i("nostrobe", "lifecycle: onPause (recording=${recorder != null})")
         // A pause alone is a dialog or a shade over a screen that is still visible: the system's microphone
         // privacy prompt ("unblock the microphone?", when the privacy switch is off), a permission request,
-        // the notification shade. It must NOT end a recording (it did: a clip of 0.3 s on a Pixel 10 Pro XL
+        // the notification shade. It must NOT end a recording (it did: a clip of 0.3 s on a phone
         // whose microphone switch was off). Ending the recording belongs to onStop.
         resumedNow = false
         super.onPause()
@@ -521,7 +523,7 @@ class MainActivity : AppCompatActivity() {
         // ensuring the buffer geometry matches the 16:9 preview stream and eliminates anamorphic distortion.
         camera = NoStrobeCamera(
             manager, option.logicalId, holder.surface, recorder, pwmMode = !strobeModeOn,
-            // While recording, do not pin a physical lens: on a Pixel 11 Pro Fold the recorder
+            // While recording, do not pin a physical lens: on a foldable the recorder
             // surface of a pinned-lens stream received garbage frames (pure noise). The lock
             // (an exposure that is a multiple of the period) does not depend on the sensor, so
             // the logical camera is fine; the lens chip becomes a zoom ratio instead.
@@ -534,7 +536,7 @@ class MainActivity : AppCompatActivity() {
             holdAutoNoSeed = recorder != null,
             forceAutoOnly = debugBuild && intent.getBooleanExtra("force_auto_only", false),
             // Recording: no analysis stream (preview + recorder only). With the third stream a
-            // Pixel 11 Pro Fold wrote pure noise into the clip; the lock is applied open loop.
+            // A foldable wrote pure noise into the clip; the lock is applied open loop.
             dumpProfiles = debugBuild && intent.getBooleanExtra("dump_profiles", false).also {
                 dumpExposuresOverride = intent.getStringExtra("dump_exposures")
                     ?.split(',')?.mapNotNull { v -> v.trim().toDoubleOrNull() }?.takeIf { l -> l.isNotEmpty() }?.toDoubleArray()
@@ -691,6 +693,24 @@ class MainActivity : AppCompatActivity() {
      * Rotation to store in the clip so it plays upright: the sensor's mounting angle corrected
      * by how the screen is turned (a foldable held sideways records landscape).
      */
+    /**
+     * A tablet or an unfolded foldable held upright (clearly taller than wide): the side-by-side layout gives
+     * the whole width to the viewfinder and the controls none. Stack them instead, viewfinder on top and
+     * the controls under it. A nearly square screen (an unfolded Pixel Fold) keeps the side-by-side layout.
+     */
+    private fun stackIfUpright(aspect: AspectFrameLayout?) {
+        val panel = findViewById<android.view.View?>(R.id.rightPanel) ?: return
+        val root = panel.parent as? android.widget.LinearLayout ?: return
+        val c = resources.configuration
+        if (aspect == null || c.screenHeightDp < c.screenWidthDp * 1.25) return
+        root.orientation = android.widget.LinearLayout.VERTICAL
+        aspect.layoutParams = android.widget.LinearLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        aspect.maxHeightShare = 0.6f
+        panel.layoutParams = android.widget.LinearLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+    }
+
     private fun sensorOrientation(): Int {
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         val option = lensOptions.getOrNull(lensIndex) ?: return 90
@@ -754,6 +774,8 @@ class MainActivity : AppCompatActivity() {
         camera = null
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         val pSize = selectPreviewSize(manager, option.logicalId)
+        // A front camera is turned the other way round: the box may change from portrait to landscape.
+        findViewById<AspectFrameLayout?>(R.id.aspectLayout)?.setRelativeOrientation(runCatching { sensorOrientation() }.getOrDefault(-1))
         if (pSize != currentPreviewSize) {
             currentPreviewSize = pSize
             surfaceView.holder.setFixedSize(pSize.width, pSize.height)
@@ -892,7 +914,7 @@ class MainActivity : AppCompatActivity() {
         if (withAudio) r.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
         r.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        // Cap the requested rate (the profile asks 33 Mbit/s at 1080p60). The Pixel's encoder
+        // Cap the requested rate (the profile asks 33 Mbit/s at 1080p60). Some phones' encoders
         // still overshoots on very noisy footage: measured ~143 Mbit/s in a dark scene.
         // A device with no camcorder profile at all gets plain 720p30.
         val rate = p?.videoBitRate ?: 8_000_000
@@ -904,7 +926,7 @@ class MainActivity : AppCompatActivity() {
         val vw = if (conservative) 1280 else rs?.width ?: p?.videoFrameWidth ?: 1280
         val vh = if (conservative) 720 else rs?.height ?: p?.videoFrameHeight ?: 720
         // HEVC when the device has an encoder for it: at the same rate it keeps far less noise
-        // than H.264, which matters at ISO 1750 in a dark room (the Pixel 11's H.264 encoder
+        // than H.264, which matters at ISO 1750 in a dark room (one phone's H.264 encoder
         // measured ~143 Mbit/s on a noisy scene against the 30 Mbit/s asked). HEVC needs about
         // 60 % of the H.264 rate for the same quality, so the cap is lowered with it.
         val hevc = !conservative && hevcEncoder()
@@ -1069,7 +1091,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** An encoder for HEVC exists on this device (the Xperia 1 III and the Pixel 11 both do). */
+    /** An encoder for HEVC exists on this device (the phones tested do). */
     private fun hevcEncoder(): Boolean = hasHevcEncoder(
         MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.map { it.isEncoder to it.supportedTypes })
 
@@ -1172,8 +1194,9 @@ class MainActivity : AppCompatActivity() {
         }
         for (b in listOf(modeVideoBtn, modePhotoBtn, modeStrobeBtn)) {
             if (b === selected) {
-                b.setBackgroundResource(R.drawable.bg_strip)
-                b.setTextColor(0xFFFFFFFF.toInt())
+                b.setBackgroundResource(R.drawable.bg_mode_selected)
+                // The theme's text colour: white on the pale strip of the light theme was unreadable.
+                b.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))
             } else {
                 b.background = null
                 b.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.m3_on_surface))

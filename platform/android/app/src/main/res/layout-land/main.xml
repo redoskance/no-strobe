@@ -271,14 +271,14 @@
                 android:id="@+id/modeVideo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_strip"
+                android:background="@drawable/bg_mode_selected"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="3dp"
                 android:text="VIDÉO"
-                android:textColor="#FFFFFFFF"
+                android:textColor="@color/m3_on_surface"
                 android:textSize="10sp"
                 android:textStyle="bold" />
 

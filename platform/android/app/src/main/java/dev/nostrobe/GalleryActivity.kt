@@ -3,6 +3,10 @@ package dev.nostrobe
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,6 +16,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.view.MotionEvent
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.SeekBar
@@ -28,9 +33,12 @@ import java.util.Locale
 
 class GalleryActivity : AppCompatActivity() {
 
-    data class ClipPair(
+    enum class MediaType { VIDEO, PHOTO }
+
+    data class MediaItem(
         val baseName: String,
         val dateDisplay: String,
+        val type: MediaType,
         val originalFile: File?,
         val originalUri: Uri?,
         var fixedFile: File?,
@@ -43,11 +51,13 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private lateinit var videoPlayer: VideoView
+    private lateinit var photoViewer: ImageView
     private lateinit var modeBadge: TextView
     private lateinit var playPauseOverlay: TextView
     private lateinit var postProgressContainer: LinearLayout
     private lateinit var postProgressBar: ProgressBar
     private lateinit var postProgressText: TextView
+    private lateinit var playbackControls: LinearLayout
     private lateinit var videoSeekBar: SeekBar
     private lateinit var timeCurrent: TextView
     private lateinit var timeTotal: TextView
@@ -62,10 +72,11 @@ class GalleryActivity : AppCompatActivity() {
     private lateinit var clipsStrip: LinearLayout
     private lateinit var galleryTitle: TextView
 
-    private val clipPairs = ArrayList<ClipPair>()
+    private val mediaItems = ArrayList<MediaItem>()
     private var selectedIndex = 0
     private var isShowingFixed = false
     private var lineRateHz = 0.0
+    private var currentPhotoBitmap: Bitmap? = null
 
     private val progressHandler = Handler(Looper.getMainLooper())
     private var isTrackingSeekBar = false
@@ -93,11 +104,13 @@ class GalleryActivity : AppCompatActivity() {
         lineRateHz = intent.getDoubleExtra("line_rate", 0.0)
 
         videoPlayer = findViewById(R.id.videoPlayer)
+        photoViewer = findViewById(R.id.photoViewer)
         modeBadge = findViewById(R.id.modeBadge)
         playPauseOverlay = findViewById(R.id.playPauseOverlay)
         postProgressContainer = findViewById(R.id.postProgressContainer)
         postProgressBar = findViewById(R.id.postProgressBar)
         postProgressText = findViewById(R.id.postProgressText)
+        playbackControls = findViewById(R.id.playbackControls)
         videoSeekBar = findViewById(R.id.videoSeekBar)
         timeCurrent = findViewById(R.id.timeCurrent)
         timeTotal = findViewById(R.id.timeTotal)
@@ -114,8 +127,8 @@ class GalleryActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.galleryBack).setOnClickListener { finish() }
         findViewById<View>(R.id.galleryServer).setOnClickListener { LanServerConfig.showDialog(this) }
-        findViewById<View>(R.id.galleryShare).setOnClickListener { shareCurrentVideo() }
-        findViewById<View>(R.id.galleryDelete).setOnClickListener { confirmDeleteCurrentClip() }
+        findViewById<View>(R.id.galleryShare).setOnClickListener { shareCurrentMedia() }
+        findViewById<View>(R.id.galleryDelete).setOnClickListener { confirmDeleteCurrentMedia() }
 
         videoPlayer.setOnPreparedListener { mp ->
             mp.isLooping = true
@@ -134,12 +147,15 @@ class GalleryActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.videoContainer).setOnClickListener {
-            if (videoPlayer.isPlaying) {
-                videoPlayer.pause()
-                playPauseOverlay.visibility = View.VISIBLE
-            } else {
-                videoPlayer.start()
-                playPauseOverlay.visibility = View.GONE
+            val item = mediaItems.getOrNull(selectedIndex) ?: return@setOnClickListener
+            if (item.type == MediaType.VIDEO) {
+                if (videoPlayer.isPlaying) {
+                    videoPlayer.pause()
+                    playPauseOverlay.visibility = View.VISIBLE
+                } else {
+                    videoPlayer.start()
+                    playPauseOverlay.visibility = View.GONE
+                }
             }
         }
 
@@ -182,7 +198,7 @@ class GalleryActivity : AppCompatActivity() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val currentPair = clipPairs.getOrNull(selectedIndex)
+                    val currentPair = mediaItems.getOrNull(selectedIndex)
                     if (currentPair?.isFixed == true && !isShowingFixed) {
                         isShowingFixed = true
                         switchVideoSource(preservePosition = true)
@@ -200,13 +216,14 @@ class GalleryActivity : AppCompatActivity() {
             true
         }
 
-        loadClips(intent.getStringExtra("clip_path"))
+        loadMedia(intent.getStringExtra("clip_path"))
     }
 
     override fun onResume() {
         super.onResume()
         progressHandler.post(updateProgressRunnable)
-        if (!videoPlayer.isPlaying && videoPlayer.currentPosition > 0) {
+        val item = mediaItems.getOrNull(selectedIndex)
+        if (item?.type == MediaType.VIDEO && !videoPlayer.isPlaying && videoPlayer.currentPosition > 0) {
             videoPlayer.start()
         }
     }
@@ -219,7 +236,13 @@ class GalleryActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    private class ClipDataHolder {
+    override fun onDestroy() {
+        currentPhotoBitmap?.recycle()
+        currentPhotoBitmap = null
+        super.onDestroy()
+    }
+
+    private class MediaDataHolder(val type: MediaType) {
         var origFile: File? = null
         var origUri: Uri? = null
         var fixedFile: File? = null
@@ -227,37 +250,49 @@ class GalleryActivity : AppCompatActivity() {
         var timestamp: Long = 0L
     }
 
-    private fun loadClips(preferredPath: String? = null) {
-        clipPairs.clear()
+    private fun loadMedia(preferredPath: String? = null) {
+        mediaItems.clear()
         val dirs = listOfNotNull(
+            File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "photos"),
             File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "no-strobe"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "no-strobe"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "no-strobe"),
             externalCacheDir,
             cacheDir
         )
 
-        val grouped = HashMap<String, ClipDataHolder>()
+        val grouped = HashMap<String, MediaDataHolder>()
 
-        // 1. Scan app-owned files (instant read access)
+        // 1. Scan filesystem directories for both videos and photos
         for (d in dirs) {
             if (d.exists() && d.isDirectory) {
-                d.listFiles { f -> f.extension.equals("mp4", ignoreCase = true) }?.forEach { f ->
-                    if (f.length() > 0L) {
-                        val name = f.nameWithoutExtension
-                        val isFixed = name.endsWith("-fixed")
-                        val base = if (isFixed) name.removeSuffix("-fixed") else name
-                        val holder = grouped.getOrPut(base) { ClipDataHolder() }
-                        if (isFixed) {
-                            holder.fixedFile = f
-                        } else {
-                            holder.origFile = f
-                            holder.timestamp = maxOf(holder.timestamp, f.lastModified())
+                d.listFiles()?.forEach { f ->
+                    if (f.isFile && f.length() > 0L) {
+                        val ext = f.extension.lowercase(Locale.US)
+                        val isVideo = ext == "mp4"
+                        val isPhoto = ext == "jpg" || ext == "jpeg" || ext == "png"
+                        if (isVideo || isPhoto) {
+                            val type = if (isPhoto) MediaType.PHOTO else MediaType.VIDEO
+                            val name = f.nameWithoutExtension
+                            val isFixed = isVideo && name.endsWith("-fixed")
+                            val base = if (isFixed) name.removeSuffix("-fixed") else name
+                            val holder = grouped.getOrPut(base) { MediaDataHolder(type) }
+                            if (isFixed) {
+                                holder.fixedFile = f
+                            } else {
+                                if (holder.origFile == null) {
+                                    holder.origFile = f
+                                }
+                                holder.timestamp = maxOf(holder.timestamp, f.lastModified())
+                            }
                         }
                     }
                 }
             }
         }
 
-        // 2. Query MediaStore for exported clips in Movies/no-strobe
+        // 2. Query MediaStore for exported videos in Movies/no-strobe
         try {
             val projection = arrayOf(
                 MediaStore.Video.Media._ID,
@@ -288,7 +323,7 @@ class GalleryActivity : AppCompatActivity() {
                     val nameNoExt = name.removeSuffix(".mp4").removeSuffix(".MP4")
                     val isFixed = nameNoExt.endsWith("-fixed")
                     val base = if (isFixed) nameNoExt.removeSuffix("-fixed") else nameNoExt
-                    val holder = grouped.getOrPut(base) { ClipDataHolder() }
+                    val holder = grouped.getOrPut(base) { MediaDataHolder(MediaType.VIDEO) }
                     if (isFixed) {
                         if (holder.fixedFile == null) holder.fixedUri = uri
                     } else {
@@ -298,7 +333,47 @@ class GalleryActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.w("nostrobe", "MediaStore query in gallery: ${e.message}")
+            android.util.Log.w("nostrobe", "MediaStore video query: ${e.message}")
+        }
+
+        // 3. Query MediaStore for exported photos in DCIM/no-strobe and Pictures/no-strobe
+        try {
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.DATE_ADDED
+            )
+            val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? OR ${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
+            } else null
+            val selectionArgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                arrayOf("%DCIM/no-strobe%", "%Pictures/no-strobe%")
+            } else null
+            contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val name = cursor.getString(nameCol) ?: continue
+                    val addedSec = cursor.getLong(dateCol)
+                    val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                    val nameNoExt = name.substringBeforeLast('.')
+                    val holder = grouped.getOrPut(nameNoExt) { MediaDataHolder(MediaType.PHOTO) }
+                    if (holder.origFile == null && holder.origUri == null) {
+                        holder.origUri = uri
+                        holder.timestamp = maxOf(holder.timestamp, addedSec * 1000L)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("nostrobe", "MediaStore image query: ${e.message}")
         }
 
         val sdf = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
@@ -306,7 +381,13 @@ class GalleryActivity : AppCompatActivity() {
 
         for ((base, holder) in grouped) {
             if (holder.origFile == null && holder.origUri == null) continue
-            val dateStr = if (base.startsWith("nostrobe-")) {
+            val dateStr = if (base.startsWith("nostrobe-shot-")) {
+                try {
+                    val datePart = base.removePrefix("nostrobe-shot-")
+                    val parsed = sdf.parse(datePart)
+                    if (parsed != null) displaySdf.format(parsed) else base
+                } catch (_: Exception) { base }
+            } else if (base.startsWith("nostrobe-")) {
                 try {
                     val datePart = base.removePrefix("nostrobe-")
                     val parsed = sdf.parse(datePart)
@@ -315,10 +396,11 @@ class GalleryActivity : AppCompatActivity() {
             } else {
                 displaySdf.format(Date(if (holder.timestamp > 0) holder.timestamp else System.currentTimeMillis()))
             }
-            clipPairs.add(
-                ClipPair(
+            mediaItems.add(
+                MediaItem(
                     baseName = base,
                     dateDisplay = dateStr,
+                    type = holder.type,
                     originalFile = holder.origFile,
                     originalUri = holder.origUri,
                     fixedFile = holder.fixedFile,
@@ -328,18 +410,18 @@ class GalleryActivity : AppCompatActivity() {
             )
         }
 
-        clipPairs.sortByDescending { it.timestamp }
+        mediaItems.sortByDescending { it.timestamp }
 
-        if (clipPairs.isEmpty()) {
-            Toast.makeText(this, "Aucun clip trouvé dans la galerie", Toast.LENGTH_SHORT).show()
-            galleryTitle.text = "Aucun clip"
+        if (mediaItems.isEmpty()) {
+            Toast.makeText(this, "Aucun média trouvé dans la galerie", Toast.LENGTH_SHORT).show()
+            galleryTitle.text = "Aucun média"
             return
         }
 
         selectedIndex = 0
         if (!preferredPath.isNullOrBlank()) {
             val prefFile = File(preferredPath)
-            val idx = clipPairs.indexOfFirst {
+            val idx = mediaItems.indexOfFirst {
                 it.originalFile?.absolutePath == prefFile.absolutePath ||
                 it.fixedFile?.absolutePath == prefFile.absolutePath ||
                 it.baseName == prefFile.nameWithoutExtension.removeSuffix("-fixed")
@@ -347,18 +429,18 @@ class GalleryActivity : AppCompatActivity() {
             if (idx >= 0) selectedIndex = idx
         }
 
-        val pair = clipPairs[selectedIndex]
-        isShowingFixed = pair.isFixed
+        val item = mediaItems[selectedIndex]
+        isShowingFixed = item.isFixed
         refreshStrip()
-        displayClip(pair, initial = true)
+        displayMedia(item, initial = true)
     }
 
     private fun refreshStrip() {
         clipsStrip.removeAllViews()
         val dp = resources.displayMetrics.density
-        for ((idx, pair) in clipPairs.withIndex()) {
+        for ((idx, item) in mediaItems.withIndex()) {
             val isSelected = idx == selectedIndex
-            val item = LinearLayout(this).apply {
+            val itemView = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = android.view.Gravity.CENTER
                 setBackgroundResource(if (isSelected) R.drawable.bg_tool else R.drawable.bg_chip)
@@ -367,33 +449,41 @@ class GalleryActivity : AppCompatActivity() {
                 setOnClickListener {
                     if (selectedIndex != idx) {
                         selectedIndex = idx
-                        isShowingFixed = pair.isFixed
+                        isShowingFixed = item.isFixed
                         refreshStrip()
-                        displayClip(pair, initial = false)
+                        displayMedia(item, initial = false)
                     }
                 }
             }
 
             val title = TextView(this).apply {
-                text = pair.dateDisplay
+                text = item.dateDisplay
                 textSize = 12f
                 setTextColor(if (isSelected) 0xFF006A60.toInt() else 0xFF707070.toInt())
                 textStyle(isSelected)
             }
-            item.addView(title)
+            itemView.addView(title)
 
             val badge = TextView(this).apply {
-                text = if (pair.isFixed) "✓ Corrigé" else "Original"
+                text = when {
+                    item.type == MediaType.PHOTO -> "📸 Photo"
+                    item.isFixed -> "✓ Corrigé"
+                    else -> "Original"
+                }
                 textSize = 10f
-                setTextColor(if (pair.isFixed) 0xFF059669.toInt() else 0xFF888888.toInt())
+                setTextColor(when {
+                    item.type == MediaType.PHOTO -> 0xFF0284C7.toInt()
+                    item.isFixed -> 0xFF059669.toInt()
+                    else -> 0xFF888888.toInt()
+                })
             }
-            item.addView(badge)
+            itemView.addView(badge)
 
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { marginEnd = (8 * dp).toInt() }
-            clipsStrip.addView(item, lp)
+            clipsStrip.addView(itemView, lp)
         }
     }
 
@@ -401,22 +491,141 @@ class GalleryActivity : AppCompatActivity() {
         setTypeface(null, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
     }
 
-    private fun displayClip(pair: ClipPair, initial: Boolean) {
-        galleryTitle.text = pair.dateDisplay
-        if (pair.isFixed) {
-            comparisonToggles.visibility = View.VISIBLE
-            notFixedActions.visibility = View.GONE
-        } else {
+    private fun displayMedia(item: MediaItem, initial: Boolean) {
+        galleryTitle.text = item.dateDisplay
+
+        if (item.type == MediaType.PHOTO) {
+            // Stop and hide video playback views
+            if (videoPlayer.isPlaying) videoPlayer.pause()
+            videoPlayer.visibility = View.GONE
+            playPauseOverlay.visibility = View.GONE
+            playbackControls.visibility = View.GONE
             comparisonToggles.visibility = View.GONE
-            notFixedActions.visibility = View.VISIBLE
+            notFixedActions.visibility = View.GONE
+
+            photoViewer.visibility = View.VISIBLE
+            modeBadge.visibility = View.VISIBLE
+            modeBadge.text = "PHOTO SYNCHRO"
+            modeBadge.setBackgroundResource(R.drawable.bg_lens_chip)
+
+            displayPhoto(item)
+        } else {
+            // Video mode
+            photoViewer.visibility = View.GONE
+            currentPhotoBitmap?.recycle()
+            currentPhotoBitmap = null
+            photoViewer.setImageDrawable(null)
+
+            videoPlayer.visibility = View.VISIBLE
+            playbackControls.visibility = View.VISIBLE
+
+            if (item.isFixed) {
+                comparisonToggles.visibility = View.VISIBLE
+                notFixedActions.visibility = View.GONE
+            } else {
+                comparisonToggles.visibility = View.GONE
+                notFixedActions.visibility = View.VISIBLE
+            }
+            updateBadge()
+            switchVideoSource(preservePosition = !initial)
         }
-        updateBadge()
-        switchVideoSource(preservePosition = !initial)
+    }
+
+    private fun displayPhoto(item: MediaItem) {
+        val target = item.getOriginalTarget()
+        Thread {
+            val bitmap = loadOrientedBitmap(target)
+            runOnUiThread {
+                if (mediaItems.getOrNull(selectedIndex)?.baseName == item.baseName) {
+                    currentPhotoBitmap?.recycle()
+                    currentPhotoBitmap = bitmap
+                    photoViewer.setImageBitmap(bitmap)
+                } else {
+                    bitmap?.recycle()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Reads the EXIF orientation metadata from [target] and decodes a properly rotated [Bitmap].
+     * Downsamples safely to prevent OutOfMemory errors on high-resolution camera frames.
+     */
+    private fun loadOrientedBitmap(target: Any): Bitmap? {
+        return try {
+            val exifOrientation = when (target) {
+                is File -> {
+                    if (!target.canRead()) return null
+                    val exif = ExifInterface(target.absolutePath)
+                    exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                }
+                is Uri -> {
+                    contentResolver.openInputStream(target)?.use { stream ->
+                        val exif = ExifInterface(stream)
+                        exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                    } ?: ExifInterface.ORIENTATION_NORMAL
+                }
+                else -> ExifInterface.ORIENTATION_NORMAL
+            }
+
+            val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            when (target) {
+                is File -> BitmapFactory.decodeFile(target.absolutePath, boundsOpts)
+                is Uri -> contentResolver.openInputStream(target)?.use { BitmapFactory.decodeStream(it, null, boundsOpts) }
+            }
+
+            val maxDimension = 2560
+            var sampleSize = 1
+            while (boundsOpts.outWidth / sampleSize > maxDimension || boundsOpts.outHeight / sampleSize > maxDimension) {
+                sampleSize *= 2
+            }
+
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+
+            val raw = when (target) {
+                is File -> BitmapFactory.decodeFile(target.absolutePath, decodeOpts)
+                is Uri -> contentResolver.openInputStream(target)?.use { BitmapFactory.decodeStream(it, null, decodeOpts) }
+                else -> null
+            } ?: return null
+
+            val matrix = Matrix()
+            when (exifOrientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                    matrix.postRotate(90f)
+                    matrix.postScale(-1f, 1f)
+                }
+                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                    matrix.postRotate(270f)
+                    matrix.postScale(-1f, 1f)
+                }
+                else -> {}
+            }
+
+            if (!matrix.isIdentity) {
+                val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+                if (rotated != raw) raw.recycle()
+                rotated
+            } else {
+                raw
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("nostrobe", "loadOrientedBitmap failed: ${e.message}")
+            null
+        }
     }
 
     private fun updateBadge() {
-        val pair = clipPairs.getOrNull(selectedIndex) ?: return
-        if (isShowingFixed && pair.isFixed) {
+        val item = mediaItems.getOrNull(selectedIndex) ?: return
+        if (item.type == MediaType.PHOTO) return
+        if (isShowingFixed && item.isFixed) {
             modeBadge.text = "APRÈS (CORRIGÉ)"
             modeBadge.setBackgroundResource(R.drawable.bg_strip)
             btnAfter.setBackgroundResource(R.drawable.bg_strip)
@@ -434,8 +643,9 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun switchVideoSource(preservePosition: Boolean) {
-        val pair = clipPairs.getOrNull(selectedIndex) ?: return
-        val target = if (isShowingFixed && pair.isFixed) pair.getFixedTarget() else pair.getOriginalTarget()
+        val item = mediaItems.getOrNull(selectedIndex) ?: return
+        if (item.type != MediaType.VIDEO) return
+        val target = if (isShowingFixed && item.isFixed) item.getFixedTarget() else item.getOriginalTarget()
 
         val currentPos = if (preservePosition) videoPlayer.currentPosition else 0
         updateBadge()
@@ -466,9 +676,10 @@ class GalleryActivity : AppCompatActivity() {
             Toast.makeText(this, "Un post-traitement est déjà en cours d'exécution.", Toast.LENGTH_SHORT).show()
             return
         }
-        val pair = clipPairs.getOrNull(selectedIndex) ?: return
+        val item = mediaItems.getOrNull(selectedIndex) ?: return
+        if (item.type != MediaType.VIDEO) return
         val freeBytes = (getExternalFilesDir(null) ?: filesDir).usableSpace
-        val srcLength = pair.originalFile?.length() ?: 0L
+        val srcLength = item.originalFile?.length() ?: 0L
         if (freeBytes < 500 * 1024 * 1024L || (srcLength > 0 && freeBytes < srcLength * 3)) {
             AlertDialog.Builder(this)
                 .setTitle("Stockage faible sur le téléphone")
@@ -477,15 +688,15 @@ class GalleryActivity : AppCompatActivity() {
                     startDesktopPostProcessing()
                 }
                 .setNegativeButton("Continuer en local") { _, _ ->
-                    executeLocalPost(pair)
+                    executeLocalPost(item)
                 }
                 .show()
             return
         }
-        executeLocalPost(pair)
+        executeLocalPost(item)
     }
 
-    private fun executeLocalPost(pair: ClipPair) {
+    private fun executeLocalPost(item: MediaItem) {
         val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips").apply { mkdirs() }
 
         postProgressContainer.visibility = View.VISIBLE
@@ -495,12 +706,11 @@ class GalleryActivity : AppCompatActivity() {
 
         Thread {
             try {
-                // Ensure a local File source exists
-                val srcFile: File = if (pair.originalFile?.canRead() == true) {
-                    pair.originalFile
-                } else if (pair.originalUri != null) {
-                    val cacheClip = File(cacheDir, "${pair.baseName}.mp4")
-                    contentResolver.openInputStream(pair.originalUri)?.use { input ->
+                val srcFile: File = if (item.originalFile?.canRead() == true) {
+                    item.originalFile
+                } else if (item.originalUri != null) {
+                    val cacheClip = File(cacheDir, "${item.baseName}.mp4")
+                    contentResolver.openInputStream(item.originalUri)?.use { input ->
                         cacheClip.outputStream().use { output -> input.copyTo(output) }
                     }
                     cacheClip
@@ -508,7 +718,7 @@ class GalleryActivity : AppCompatActivity() {
                     throw Exception("Fichier source introuvable")
                 }
 
-                val dst = File(clipsDir, pair.baseName + "-fixed.mp4")
+                val dst = File(clipsDir, item.baseName + "-fixed.mp4")
                 val t0 = System.currentTimeMillis()
                 OnDevicePost.fix(srcFile, dst, lineRateHz) { pct ->
                     runOnUiThread {
@@ -520,11 +730,11 @@ class GalleryActivity : AppCompatActivity() {
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
                     btnProcessLocal.isEnabled = true
-                    pair.fixedFile = dst
+                    item.fixedFile = dst
                     isShowingFixed = true
                     Toast.makeText(this, "Post-traitement terminé en ${(System.currentTimeMillis() - t0) / 1000}s", Toast.LENGTH_SHORT).show()
                     refreshStrip()
-                    displayClip(pair, initial = false)
+                    displayMedia(item, initial = false)
                 }
             } catch (e: Exception) {
                 android.util.Log.w("nostrobe", "Gallery post fix failed: ${e.message}")
@@ -545,10 +755,11 @@ class GalleryActivity : AppCompatActivity() {
             }
             return
         }
-        val pair = clipPairs.getOrNull(selectedIndex) ?: return
+        val item = mediaItems.getOrNull(selectedIndex) ?: return
+        if (item.type != MediaType.VIDEO) return
         val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips").apply { mkdirs() }
         val token = LanServerConfig.getServerToken(this)
-        val dst = File(clipsDir, pair.baseName + "-fixed.mp4")
+        val dst = File(clipsDir, item.baseName + "-fixed.mp4")
 
         postProgressContainer.visibility = View.VISIBLE
         postProgressBar.progress = 0
@@ -557,11 +768,11 @@ class GalleryActivity : AppCompatActivity() {
 
         Thread {
             try {
-                val srcFile: File = if (pair.originalFile?.canRead() == true) {
-                    pair.originalFile
-                } else if (pair.originalUri != null) {
-                    val cacheClip = File(cacheDir, "${pair.baseName}.mp4")
-                    contentResolver.openInputStream(pair.originalUri)?.use { input ->
+                val srcFile: File = if (item.originalFile?.canRead() == true) {
+                    item.originalFile
+                } else if (item.originalUri != null) {
+                    val cacheClip = File(cacheDir, "${item.baseName}.mp4")
+                    contentResolver.openInputStream(item.originalUri)?.use { input ->
                         cacheClip.outputStream().use { output -> input.copyTo(output) }
                     }
                     cacheClip
@@ -579,11 +790,11 @@ class GalleryActivity : AppCompatActivity() {
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
                     btnProcessDesktop.isEnabled = true
-                    pair.fixedFile = dst
+                    item.fixedFile = dst
                     isShowingFixed = true
                     Toast.makeText(this, "Correction sur serveur LAN terminée !", Toast.LENGTH_SHORT).show()
                     refreshStrip()
-                    displayClip(pair, initial = false)
+                    displayMedia(item, initial = false)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -595,9 +806,9 @@ class GalleryActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun shareCurrentVideo() {
-        val pair = clipPairs.getOrNull(selectedIndex) ?: return
-        val target = if (isShowingFixed && pair.isFixed) pair.getFixedTarget() else pair.getOriginalTarget()
+    private fun shareCurrentMedia() {
+        val item = mediaItems.getOrNull(selectedIndex) ?: return
+        val target = if (isShowingFixed && item.isFixed) item.getFixedTarget() else item.getOriginalTarget()
 
         val uri: Uri = when (target) {
             is File -> {
@@ -611,26 +822,38 @@ class GalleryActivity : AppCompatActivity() {
             else -> return
         }
 
+        val isPhoto = item.type == MediaType.PHOTO
+        val mime = if (isPhoto) "image/jpeg" else "video/mp4"
+        val chooserTitle = if (isPhoto) "Partager la photo" else "Partager la vidéo"
+
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "video/mp4"
+            type = mime
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        startActivity(Intent.createChooser(shareIntent, "Partager la vidéo"))
+        startActivity(Intent.createChooser(shareIntent, chooserTitle))
     }
 
-    private fun confirmDeleteCurrentClip() {
-        val pair = clipPairs.getOrNull(selectedIndex) ?: return
+    private fun confirmDeleteCurrentMedia() {
+        val item = mediaItems.getOrNull(selectedIndex) ?: return
+        val isPhoto = item.type == MediaType.PHOTO
+        val dialogTitle = if (isPhoto) "Supprimer cette photo ?" else "Supprimer ce clip ?"
+        val dialogMsg = if (isPhoto) {
+            "Voulez-vous supprimer cette photo ?"
+        } else {
+            "Voulez-vous supprimer ce clip vidéo (original et version corrigée) ?"
+        }
+
         AlertDialog.Builder(this)
-            .setTitle("Supprimer ce clip ?")
-            .setMessage("Voulez-vous supprimer ce clip vidéo (original et version corrigée) ?")
+            .setTitle(dialogTitle)
+            .setMessage(dialogMsg)
             .setPositiveButton("Supprimer") { _, _ ->
-                try { pair.originalFile?.delete() } catch (_: Exception) {}
-                try { pair.fixedFile?.delete() } catch (_: Exception) {}
-                pair.originalUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
-                pair.fixedUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
-                Toast.makeText(this, "Clip supprimé", Toast.LENGTH_SHORT).show()
-                loadClips()
+                try { item.originalFile?.delete() } catch (_: Exception) {}
+                try { item.fixedFile?.delete() } catch (_: Exception) {}
+                item.originalUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
+                item.fixedUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
+                Toast.makeText(this, if (isPhoto) "Photo supprimée" else "Clip supprimé", Toast.LENGTH_SHORT).show()
+                loadMedia()
             }
             .setNegativeButton("Annuler", null)
             .show()

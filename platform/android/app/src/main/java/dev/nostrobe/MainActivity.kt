@@ -288,9 +288,17 @@ class MainActivity : AppCompatActivity() {
         }
         val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips")
         val moviesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "no-strobe")
-        val hasClips = (clipsDir.exists() && clipsDir.listFiles { f -> f.extension.equals("mp4", ignoreCase = true) }?.isNotEmpty() == true) ||
-                       (moviesDir.exists() && moviesDir.listFiles { f -> f.extension.equals("mp4", ignoreCase = true) }?.isNotEmpty() == true)
-        if (hasClips) {
+        val photosDir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "photos")
+        val dcimDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "no-strobe")
+        fun isMedia(f: File) = f.extension.equals("mp4", ignoreCase = true) ||
+                               f.extension.equals("jpg", ignoreCase = true) ||
+                               f.extension.equals("jpeg", ignoreCase = true) ||
+                               f.extension.equals("png", ignoreCase = true)
+        val hasMedia = (clipsDir.exists() && clipsDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
+                       (moviesDir.exists() && moviesDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
+                       (photosDir.exists() && photosDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true) ||
+                       (dcimDir.exists() && dcimDir.listFiles { f -> isMedia(f) }?.isNotEmpty() == true)
+        if (hasMedia) {
             postButton.visibility = android.view.View.VISIBLE
             postButton.text = "galerie"
         }
@@ -929,12 +937,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun savePhoto(bytes: ByteArray) {
+        val appPhotosDir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir, "photos").apply { mkdirs() }
         val picturesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "no-strobe").apply { mkdirs() }
         val dateStr = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
         val name = "nostrobe-shot-" + dateStr + ".jpg"
+        val appFile = File(appPhotosDir, name)
         val out = File(picturesDir, name)
         try {
+            appFile.writeBytes(bytes)
             out.writeBytes(bytes)
+            lastClip = appFile
             val cv = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
                 put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")

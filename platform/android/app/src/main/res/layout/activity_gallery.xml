@@ -81,7 +81,7 @@
             android:textSize="15sp" />
     </LinearLayout>
 
-    <!-- Video Viewport -->
+    <!-- Video / Photo Viewport -->
     <FrameLayout
         android:id="@+id/videoContainer"
         android:layout_width="match_parent"
@@ -94,6 +94,15 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_gravity="center" />
+
+        <ImageView
+            android:id="@+id/photoViewer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
 
         <!-- Status / Mode Badge Overlay -->
         <TextView
@@ -164,6 +173,7 @@
 
     <!-- Playback Seekbar & Timestamps -->
     <LinearLayout
+        android:id="@+id/playbackControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"

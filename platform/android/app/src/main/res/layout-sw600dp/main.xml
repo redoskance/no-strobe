@@ -247,6 +247,49 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
+        <!-- Mode switcher on top of the shutter button: VIDÉO / PHOTO -->
+        <LinearLayout
+            android:id="@+id/modeSwitchRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_lens_chip"
+            android:orientation="horizontal"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="3dp">
+
+            <TextView
+                android:id="@+id/modeVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_strip"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="6dp"
+                android:text="VIDÉO"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/modePhoto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="6dp"
+                android:text="PHOTO"
+                android:textColor="@color/m3_on_surface"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
         <!-- Shutter Button & Camera Flip Row -->
         <FrameLayout
             android:layout_width="match_parent"

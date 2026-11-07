@@ -667,6 +667,11 @@ class NoStrobeCamera(
                     builder?.get(CaptureRequest.SENSOR_SENSITIVITY)?.let { iso ->
                         r.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
                     }
+                } else {
+                    // No flicker lock: the auto-exposure keeps converging between the frames of the burst
+                    // (16 ms then 66 ms on a Pixel 10 Pro XL in a dim room), and the frames could not be
+                    // compared. Lock it at its current state for the whole burst.
+                    r.set(CaptureRequest.CONTROL_AE_LOCK, true)
                 }
                 r.build()
             }
@@ -735,7 +740,11 @@ class NoStrobeCamera(
                 val best = BurstPick.pick(scored)
                 Log.i(TAG, "burst: ${frames.size} frames, kept #$best; light " +
                     scored.joinToString(" ") { "%.2f".format(it.light) } + "; banding " +
-                    scored.joinToString(" ") { "%.3f".format(it.banding) })
+                    scored.joinToString(" ") { "%.3f".format(it.banding) } + "; exposure ms x ISO " +
+                    frames.joinToString(" ") { (ts, _) ->
+                        val (e, iso) = synchronized(b) { b.meta[ts] } ?: (0L to 0)
+                        "%.1fx%d".format(e / 1e6, iso)
+                    })
                 b.onPicture(frames[best].second)
             } catch (e: Exception) {
                 Log.w(TAG, "burst pick failed (${e.message}): keeping the first frame")

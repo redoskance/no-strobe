@@ -6,29 +6,44 @@ import kotlin.math.sqrt
 /**
  * Picks the best still of a burst taken under a flickering or strobing light.
  *
- * A frame hit by a strobe pulse is brighter than its neighbours at the same exposure and ISO, so
- * the light level of every frame is its mean luma divided by what the sensor was asked to collect
- * (exposure x ISO, from the capture result). The frames within [LIGHT_BAND] of the darkest one are
- * the frames the pulses missed; among them the one with the least row banding wins (a flicker that
- * the exposure did not cancel shows as horizontal bands).
+ * A frame hit by a strobe pulse is brighter than its neighbours at the same exposure and ISO. The burst
+ * therefore runs at a FIXED exposure (the auto-exposure is locked), and the light of a frame is its raw
+ * mean luma: a JPEG's luma is already normalised by the auto-exposure, so dividing by exposure x ISO
+ * (the first version did) turns an exposure change into a light change and keeps the longest, blurriest
+ * frame. The frames within [LIGHT_BAND] of the darkest one are the frames the pulses missed; among them
+ * the one with the least row banding wins (a flicker the exposure did not cancel shows as bands).
+ * When the capture results show that the exposure was NOT constant across the burst, the light levels
+ * cannot be compared and the least banded frame is kept.
  */
 object BurstPick {
     /** Frames at most this much brighter than the darkest one count as not flashed. */
     const val LIGHT_BAND = 1.15
 
     class Frame(
-        /** Mean luma / (exposure x ISO): comparable between frames taken with different settings. */
+        /** Mean luma of the decoded frame. */
         val light: Double,
         /** Row-to-row luma variation relative to the mean (0 = none). */
         val banding: Double,
+        /** Exposure (ms) x ISO / 100 the sensor reported for the frame; 0 when unknown. */
+        val gain: Double = 1.0,
     )
+
+    /** The exposure x ISO of the burst stayed within this ratio: its light levels can be compared. */
+    const val GAIN_TOLERANCE = 1.15
 
     /** Index of the frame to keep (0 when the list is empty or has one frame). */
     fun pick(frames: List<Frame>): Int {
         if (frames.size <= 1) return 0
+        if (!comparable(frames)) return frames.indices.minByOrNull { frames[it].banding } ?: 0
         val darkest = frames.minOf { it.light }
         val candidates = frames.indices.filter { frames[it].light <= darkest * LIGHT_BAND }
         return candidates.minByOrNull { frames[it].banding } ?: 0
+    }
+
+    /** True when every frame has a known gain and the gains agree within [GAIN_TOLERANCE]. */
+    fun comparable(frames: List<Frame>): Boolean {
+        if (frames.any { it.gain <= 0.0 }) return false
+        return frames.maxOf { it.gain } / frames.minOf { it.gain } <= GAIN_TOLERANCE
     }
 
     /**
@@ -54,8 +69,7 @@ object BurstPick {
         }
         val mean = rows.average()
         val gain = (exposureNs / 1e6) * (iso / 100.0)
-        val light = if (gain > 1e-9) mean / gain else mean
-        return Frame(light, banding(rows, mean))
+        return Frame(mean, banding(rows, mean), gain)
     }
 
     /** Standard deviation of the row means around their moving average, relative to the mean. */

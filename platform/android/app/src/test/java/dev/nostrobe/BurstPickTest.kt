@@ -40,4 +40,24 @@ class BurstPickTest {
         assertEquals(0.0, BurstPick.banding(flat, 100.0), 1e-9)
         assert(BurstPick.banding(banded, 100.0) > 0.05)
     }
+
+    @Test
+    fun framesWithDifferentExposuresAreNotComparedOnLight() {
+        // The exposure changed during the burst (gain 1.0 -> 4.2): a dark frame is the long one, not an
+        // unflashed one. Only the banding decides.
+        val frames = listOf(
+            BurstPick.Frame(1.00, 0.050, gain = 1.0),
+            BurstPick.Frame(0.15, 0.030, gain = 4.2),
+            BurstPick.Frame(0.14, 0.020, gain = 4.2),
+        )
+        assertEquals(false, BurstPick.comparable(frames))
+        assertEquals(2, BurstPick.pick(frames))
+    }
+
+    @Test
+    fun unknownGainIsNotComparable() {
+        val frames = listOf(BurstPick.Frame(1.0, 0.05, gain = 0.0), BurstPick.Frame(2.5, 0.01, gain = 0.0))
+        assertEquals(false, BurstPick.comparable(frames))
+        assertEquals(1, BurstPick.pick(frames))
+    }
 }

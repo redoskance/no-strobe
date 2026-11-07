@@ -112,14 +112,18 @@ jobs:
             platform/android/app/build/outputs/apk/debug/app-debug.apk
             target/release/no-strobe-post
       # Tag releases are created by the tag-release job, not here.
-      - name: Keep the APKs for the tag release
+      - name: Keep the release APK for the tag release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
-          name: app-apks
-          path: |
-            platform/android/app/build/outputs/apk/release/app-release.apk
-            platform/android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-release-apk
+          path: platform/android/app/build/outputs/apk/release/app-release.apk
+      - name: Keep the debug APK for the tag release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: platform/android/app/build/outputs/apk/debug/app-debug.apk
       - name: Keep the desktop tool for the tag release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
@@ -199,7 +203,7 @@ jobs:
           prerelease: false
           draft: false
           files: |
-            dist/app-apks/app-release.apk
-            dist/app-apks/app-debug.apk
+            dist/app-release-apk/app-release.apk
+            dist/app-debug-apk/app-debug.apk
             dist/no-strobe-post/no-strobe-post
             dist/ios-mockup-app/AntiStrobe-Simulator.app.zip

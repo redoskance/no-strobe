@@ -92,6 +92,23 @@ impl SignalBuffer {
         out
     }
 
+    /// Times of rising edges with hysteresis: a pulse starts when the luma passes `high` and ends only when
+    /// it falls under `low`. Noise crossing a single threshold on a slow ramp or a step of brightness
+    /// made one edge per crossing; here an excursion is one pulse however noisy it is.
+    pub fn rising_edge_times_hysteresis(&self, high: f64, low: f64) -> Vec<f64> {
+        let mut out = Vec::new();
+        let mut above = false;
+        for f in self.frames.iter() {
+            if !above && f.luminance > high {
+                out.push(f.t_us);
+                above = true;
+            } else if above && f.luminance < low {
+                above = false;
+            }
+        }
+        out
+    }
+
     pub fn times(&self) -> Vec<f64> {
         self.frames.iter().map(|f| f.t_us).collect()
     }

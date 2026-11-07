@@ -191,6 +191,18 @@ pub fn fit_from_pulses(
         _ => guess_period_us,
     };
 
+    fit_with_seed(pulses, seed)
+}
+
+/// Least-squares fit of the pulse times to `phase + m * period` from a GOOD seed (the Rayleigh estimate of
+/// `pulse_period`, accurate to about 1 %). `fit_from_pulses` also replaces a coarse seed by the median spacing
+/// of the pulses, which is wrong once the spacings are quantised by the frame clock: at 13 Hz and 60 fps they
+/// are 83 and 67 ms for a 77 ms period, the median (83 ms) is within 25 % of the seed and won, and the cycle
+/// counts were then wrong (a 15 % error).
+pub fn fit_with_seed(pulses: &[f64], seed: f64) -> Option<Estimate> {
+    if pulses.len() < 3 || seed <= 0.0 {
+        return None;
+    }
     let t0 = pulses[0];
     let mut period = seed;
     let mut phase = t0;
@@ -238,6 +250,9 @@ pub fn fit_from_pulses(
 pub struct PulseTracker {
     pub est: Estimate,
     pub frames_since_pulse: usize,
+    /// Time of the last pulse already used: the buffer keeps seconds of pulses and hands them all back
+    /// every frame, and each one must adjust the estimate once.
+    last_seen_us: f64,
 }
 
 impl PulseTracker {
@@ -245,10 +260,20 @@ impl PulseTracker {
         Self {
             est,
             frames_since_pulse: 0,
+            last_seen_us: f64::NEG_INFINITY,
+        }
+    }
+
+    /// The estimate was fitted on these pulses: they are not new.
+    pub fn mark_seen(&mut self, pulses: &[f64]) {
+        if let Some(last) = pulses.last() {
+            self.last_seen_us = *last;
         }
     }
 
     pub fn update(&mut self, pulses: &[f64]) {
+        let fresh: Vec<f64> = pulses.iter().copied().filter(|p| *p > self.last_seen_us).collect();
+        let pulses = &fresh[..];
         if pulses.is_empty() {
             self.frames_since_pulse += 1;
             if self.frames_since_pulse > 30 {
@@ -263,6 +288,7 @@ impl PulseTracker {
             self.est.phase_us += 0.05 * residual;
             self.est.period_us += 0.002 * residual;
             self.est.confidence = self.est.confidence.max(0.5);
+            self.last_seen_us = p;
         }
         self.frames_since_pulse = 0;
     }

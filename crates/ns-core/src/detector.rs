@@ -132,11 +132,75 @@ pub fn pulse_period(pulses: &[f64], min_hz: f64, max_hz: f64) -> Option<(f64, f6
     None
 }
 
-/// Least-squares fit of flash times to `phase + m * period`, where m is an integer cycle
-/// count. The seed comes from the autocorrelation guess, refined by the pulse spacings
-/// `median / k`. Two guards keep the seed honest: spacings equal to the frame period are a
-/// sampling artifact, not the strobe, and a seed far from the autocorrelation peak means the
-/// spacings are aliased, so the peak wins.
+/// How strongly the luma repeats at a given period: the amplitude of its fundamental (the luma folded on
+/// the period), and that amplitude over the amplitude noise alone would give. The period is searched within
+/// +-3 % of `period_us`. Returns (amplitude, ratio, period_us of the best fold).
+///
+/// Unlike the pulse times, this does not depend on the duty of the flash or on a baseline: a strobe of 50 %
+/// duty, whose median sits between its two levels, folds as cleanly as a narrow flash. For white noise of
+/// standard deviation s over n frames the amplitude is s * sqrt(2 / n) on average, and a ratio of 5 happens
+/// about once in 10^5 tries.
+pub fn fold_ratio(frames: &[(f64, f64)], period_us: f64) -> (f64, f64, f64) {
+    let n = frames.len();
+    if n < 8 || period_us <= 0.0 {
+        return (0.0, 0.0, period_us);
+    }
+    let mean = frames.iter().map(|f| f.1).sum::<f64>() / n as f64;
+    let var = frames.iter().map(|f| (f.1 - mean).powi(2)).sum::<f64>() / n as f64;
+    let sd = var.sqrt();
+    if sd <= 0.0 {
+        return (0.0, 0.0, period_us);
+    }
+    let t0 = frames[0].0;
+    let mut best = (0.0, period_us);
+    for k in -6..=6 {
+        let p = period_us * (1.0 + 0.005 * k as f64);
+        let w = 2.0 * std::f64::consts::PI / p;
+        let (mut c, mut s) = (0.0, 0.0);
+        for (t, x) in frames {
+            let a = w * (t - t0);
+            c += (x - mean) * a.cos();
+            s += (x - mean) * a.sin();
+        }
+        let amp = 2.0 * (c * c + s * s).sqrt() / n as f64;
+        if amp > best.0 {
+            best = (amp, p);
+        }
+    }
+    (best.0, best.0 / (sd * (2.0 / n as f64).sqrt()), best.1)
+}
+
+/// How well the pulse times follow the fitted train, as (completeness, matched, cycles):
+/// - `cycles`: the number of distinct cycles of the train that hold a pulse;
+/// - `completeness`: those cycles over the cycles between the first and the last of them (1 when no cycle
+///   is missing). A strobe lights nearly every cycle; a scene whose lights blink now and then does not;
+/// - `matched`: the share of the pulses within a third of a period of the train (the times are quantised
+///   to the frame clock, a fifth of a period at the fastest).
+pub fn train_regularity(pulses: &[f64], est: &Estimate) -> (f64, f64, usize) {
+    if pulses.is_empty() || est.period_us <= 0.0 {
+        return (0.0, 0.0, 0);
+    }
+    let mut cycles: Vec<i64> = Vec::new();
+    let mut matched = 0usize;
+    for &t in pulses {
+        let m = ((t - est.phase_us) / est.period_us).round();
+        if (t - (est.phase_us + m * est.period_us)).abs() <= est.period_us / 3.0 {
+            matched += 1;
+            cycles.push(m as i64);
+        }
+    }
+    cycles.sort_unstable();
+    cycles.dedup();
+    match (cycles.first(), cycles.last()) {
+        (Some(first), Some(last)) => (
+            cycles.len() as f64 / (last - first + 1) as f64,
+            matched as f64 / pulses.len() as f64,
+            cycles.len(),
+        ),
+        _ => (0.0, 0.0, 0),
+    }
+}
+
 /// Times of rising edges: the first frame of each run above `threshold`.
 ///
 /// A square wave whose bright part spans several frames puts every one of them
@@ -156,6 +220,11 @@ pub fn rising_edges(luma: &[f64], threshold: f64, frame_us: f64) -> Vec<f64> {
     out
 }
 
+/// Least-squares fit of flash times to `phase + m * period`, where m is an integer cycle
+/// count. The seed comes from the autocorrelation guess, refined by the pulse spacings
+/// `median / k`. Two guards keep the seed honest: spacings equal to the frame period are a
+/// sampling artifact, not the strobe, and a seed far from the autocorrelation peak means the
+/// spacings are aliased, so the peak wins.
 pub fn fit_from_pulses(
     pulses: &[f64],
     guess_period_us: f64,

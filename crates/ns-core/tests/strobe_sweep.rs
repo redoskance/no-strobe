@@ -75,7 +75,8 @@ fn ok(o: &Outcome) -> bool {
 /// Limits that remain, by physics and not by bug, and are not asserted:
 /// - above half the frame rate (15 Hz at 30 fps) the frames alias the strobe: 60 fps is needed up to 30 Hz.
 ///   The phone may run at 30 fps even when 60 is asked (a Pixel 10 Pro XL does in a dark room);
-/// - a flash of 5 % of the period at 5 or 10 Hz and 30 fps is too faint in a frame-long exposure.
+/// - a flash of about half the period seen through a window of most of a 33 ms frame at 7 or 10 Hz is a
+///   smooth wave of two or three frames: the edges are lost.
 #[test]
 fn strobe_from_1_to_20_hz_locks_on_the_right_period_in_band() {
     let all = vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0];
@@ -85,9 +86,15 @@ fn strobe_from_1_to_20_hz_locks_on_the_right_period_in_band() {
         (60.0, 0.05, all.clone()),
         // A broad flash (35 % of the period) at 17 Hz is a smooth wave, not a pulse train: not asserted.
         (60.0, 0.35, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 20.0]),
-        (30.0, 0.35, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
-        (30.0, 0.15, vec![1.0, 2.0, 3.0, 5.0, 7.0]),
-        (30.0, 0.05, vec![1.0, 2.0, 3.0, 7.0]),
+        (30.0, 0.35, vec![1.0, 2.0, 3.0, 5.0, 10.0]),
+        (30.0, 0.15, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
+        (30.0, 0.05, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
+        // A beacon that is lit half of the time or more: the median of the luma sits on the lit level, and
+        // the dark gaps are the events.
+        (60.0, 0.5, vec![2.0, 3.0, 5.0, 7.0, 10.0, 15.0]),
+        (60.0, 0.7, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0]),
+        (30.0, 0.5, vec![1.0, 2.0, 3.0, 5.0]),
+        (30.0, 0.7, vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0]),
     ] {
         for f in freqs {
             let o = run(f, duty, fps, 600);
@@ -124,7 +131,7 @@ fn report_strobe_sweep() {
         return;
     }
     for fps in [30.0, 60.0] {
-        for duty in [0.05, 0.15, 0.35] {
+        for duty in [0.05, 0.15, 0.35, 0.5, 0.7] {
             let mut row = String::new();
             for f in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0, 17.0, 20.0] {
                 let o = run(f, duty, fps, 600);
@@ -221,4 +228,133 @@ fn report_no_strobe_locks() {
             eprintln!("NOSTROBE fps {fps:>3.0} noise {noise:.3} drift {drift:.2}: {runs}/10 runs locked {locks:?}");
         }
     }
+}
+
+
+/// A strobe for `on_frames` frames, then constant light for `off_frames`: the states seen, frame by frame.
+fn strobe_then_nothing(f_hz: f64, duty: f64, fps: f64, on_frames: usize, off_frames: usize) -> Vec<(State, f64, f64)> {
+    let period = 1e6 / f_hz;
+    let flash = (period * duty).max(500.0);
+    let mut c = Controller::new(CameraLimits::typical_phone());
+    let mut t = 0.0;
+    let mut exposure = 8_000.0;
+    let mut current_fps = fps;
+    let mut out = Vec::new();
+    for i in 0..(on_frames + off_frames) {
+        let lum = if i < on_frames { synth(t, exposure, period, 0.37 * period, flash) } else { 0.2 };
+        let cmd = c.on_frame(t, lum);
+        if cmd.exposure_us > 0.0 {
+            exposure = cmd.exposure_us;
+        }
+        if cmd.fps > 0.0 {
+            current_fps = cmd.fps.min(fps);
+        }
+        out.push((cmd.state, cmd.period_us, t));
+        t += 1e6 / current_fps;
+    }
+    out
+}
+
+/// The lock is checked again every 20 s (the pulses are hidden by a working lock, so nothing else can end
+/// it). A strobe that goes on must come through the checks and stay locked.
+#[test]
+fn a_strobe_that_goes_on_stays_locked_through_the_rechecks() {
+    for (f, duty, fps) in [
+        (1.0, 0.35, 30.0),
+        (2.0, 0.15, 30.0),
+        (5.0, 0.5, 30.0),
+        (3.0, 0.15, 60.0),
+        (10.0, 0.05, 60.0),
+        (15.0, 0.15, 60.0),
+    ] {
+        let frames = (fps * 100.0) as usize; // 100 s: four checks
+        let states = strobe_then_nothing(f, duty, fps, frames, 0);
+        let first = states.iter().position(|s| s.0 == State::Locked).expect("no lock");
+        let after = &states[first..];
+        // In time, not in frames: a locked camera may run at 15 fps and a searching one at 30 or 60.
+        let mut locked_us = 0.0;
+        for w in after.windows(2) {
+            if w[0].0 == State::Locked {
+                locked_us += w[1].2 - w[0].2;
+            }
+        }
+        let share = locked_us / (after.last().unwrap().2 - after[0].2);
+        assert!(share > 0.75, "{f} Hz, duty {duty}, {fps} fps: locked only {:.0} % of the time after the lock", share * 100.0);
+        let period = states.last().unwrap().1;
+        assert!(period > 0.0 && (period - 1e6 / f).abs() < 0.03 * 1e6 / f, "{f} Hz: the period at the end is {period}");
+    }
+}
+
+/// A light that blinked at a steady rate for a few seconds and stopped must not hold a lock: the recording
+/// that follows would be exposed for a strobe that is not there.
+#[test]
+fn a_strobe_that_stops_releases_the_lock() {
+    for (f, duty, fps) in [(2.0, 0.15, 30.0), (5.0, 0.35, 30.0), (10.0, 0.05, 60.0), (1.0, 0.15, 60.0)] {
+        let on = (fps * 12.0) as usize;
+        let off = (fps * 40.0) as usize;
+        let states = strobe_then_nothing(f, duty, fps, on, off);
+        assert!(states[..on].iter().any(|s| s.0 == State::Locked), "{f} Hz: it never locked");
+        let end = states.last().unwrap().0;
+        assert_eq!(end, State::Search, "{f} Hz, duty {duty}, {fps} fps: still locked 40 s after the strobe stopped");
+    }
+}
+
+/// A period for which the camera has no exposure plan (a 1.2 Hz strobe on a camera whose slowest rate is 15 fps and
+/// whose longest exposure is 16 s: the flash is longer than a frame, and so is the dark gap) used to lock, and
+/// `track` then called `search`, which locked on the same pulses again: a stack overflow.
+#[test]
+fn a_period_with_no_exposure_plan_does_not_recurse() {
+    let limits = CameraLimits {
+        min_exposure_us: 123.0,
+        max_exposure_us: 16_000_006.0,
+        sustain_us: 0.0,
+        supported_fps: vec![15.0, 24.0, 30.0, 60.0],
+        min_iso: 36.0,
+        max_iso: 4620.0,
+    };
+    for f_hz in [1.0, 1.2, 1.4] {
+        let period = 1e6 / f_hz;
+        let mut c = Controller::new(limits.clone());
+        let mut t = 0.0;
+        let mut exposure = 8_000.0;
+        for _ in 0..1500 {
+            let lum = synth(t, exposure, period, 0.37 * period, period * 0.1);
+            let cmd = c.on_frame(t, lum);
+            if cmd.exposure_us > 0.0 {
+                exposure = cmd.exposure_us;
+            }
+            t += 1e6 / 30.0;
+        }
+    }
+}
+
+/// A real scene, recorded: the mean luma of every frame of the STROBE mode on a Pixel 10 Pro XL, 68 s, nobody
+/// running a strobe. Its lights blink now and then (brief frames +25 % brighter, many exactly 100 ms apart,
+/// but a pulse in one cycle of three at most), and the controller locked on 9.7 Hz after 3 s and kept the
+/// lock: four pulses line up on some period of the scan about once in three tries, and nothing released a lock.
+/// (At 47 s the source does give a regular train of about 30 pulses at 100 ms: that is a strobe by every
+/// measure, so a lock there is not asserted either way.)
+#[test]
+fn a_real_scene_with_a_blinking_light_does_not_lock_on_irregular_pulses() {
+    let text = include_str!("data/pixel_static_scene_frame_luma.csv");
+    let limits = CameraLimits {
+        min_exposure_us: 123.0,
+        max_exposure_us: 16_000_006.0,
+        sustain_us: 0.0,
+        supported_fps: vec![15.0, 24.0, 30.0, 60.0],
+        min_iso: 36.0,
+        max_iso: 4620.0,
+    };
+    let mut c = Controller::new(limits);
+    let mut frames = 0;
+    for line in text.lines().filter(|l| !l.starts_with('#')) {
+        let (t, luma) = line.split_once(',').expect("time_us,luma");
+        let t: f64 = t.parse().unwrap();
+        let cmd = c.on_frame(t, luma.parse().unwrap());
+        frames += 1;
+        if t < 45.0e6 {
+            assert_eq!(cmd.state, State::Search, "locked at {:.1} s on irregular pulses", t / 1e6);
+        }
+    }
+    assert!(frames > 2000);
 }

@@ -35,6 +35,9 @@ const VERIFY_RATIO: f64 = 0.35;
 /// Temporal banding (relative to the mean luma) under this is noise, not flicker.
 const TEMPORAL_FLOOR: f64 = 0.015;
 const SCAN_RATIO: f64 = 1.18;
+/// Frames checked after the row rate is learned mid-run (the app only sends frames taken at the
+/// last commanded exposure, so only the first one can still carry the blind search's exposure).
+const SETTLE_FRAMES: usize = 1;
 const SCAN_LINEAR_US: f64 = 1000.0;
 const MIN_HZ: f64 = 100.0;
 const MAX_HZ: f64 = 5000.0;
@@ -127,6 +130,12 @@ pub struct PwmController {
     scan_window: Option<(f64, f64)>,
     /// Flicker frequency estimated from the spacing of the scan nulls (0 while searching).
     f_est_hz: f64,
+    /// Frames to skip after the row rate became known: they were taken at the exposure of the
+    /// blind search (often a long one, near a null) and say nothing about the flicker.
+    settle_frames: usize,
+    /// The lock in force was verified blind (temporal null): the row rate learned afterwards must
+    /// not send it through the row path's recalibration, which re-measures f from short exposures.
+    blind_lock: bool,
     /// Software PLL for phase tracking and Camera2 pipeline latency compensation.
     pll: Option<crate::pll::FlickerPll>,
     /// Hardware camera pipeline depth in frames (CameraCharacteristics.REQUEST_PIPELINE_MAX_DEPTH).
@@ -187,6 +196,8 @@ impl PwmController {
             scan_cands: Vec::new(),
             scan_window: None,
             f_est_hz: 0.0,
+            settle_frames: 0,
+            blind_lock: false,
             pll: None,
             pipeline_depth: 2.0,
             total_frames: 0,
@@ -212,8 +223,25 @@ impl PwmController {
         if line_rate_hz > 0.0 {
             let was_unknown = self.line_rate_hz <= 0.0;
             self.line_rate_hz = line_rate_hz;
-            if was_unknown && self.phase != Phase::Locked {
-                self.phase = Phase::Search;
+            if was_unknown && self.phase == Phase::Locked {
+                // The line rate was unknown until now, so this lock was found blind.
+                self.blind_lock = true;
+            } else if was_unknown {
+                // What was learned blind (a banding period in rows, a PLL, scan candidates, a
+                // half-verified null) was built without the row rate: start the search again.
+                // Keeping it made a probe lock at 28.3 ms on a 100 Hz lamp (not a null).
+                let mut fresh = Self::new(self.limits.clone(), line_rate_hz);
+                fresh.shutter_fraction = self.shutter_fraction;
+                fresh.min_exp_floor = self.min_exp_floor;
+                fresh.max_exp_ceiling = self.max_exp_ceiling;
+                fresh.pipeline_depth = self.pipeline_depth;
+                fresh.total_frames = self.total_frames;
+                fresh.settle_frames = SETTLE_FRAMES;
+                fresh.last_exposure = self.last_exposure;
+                // The row profiles are raw luminance and do not depend on the row rate: the
+                // differential estimate of the next frame needs the previous one.
+                fresh.profiles = std::mem::take(&mut self.profiles);
+                *self = fresh;
             }
         }
     }
@@ -341,8 +369,10 @@ impl PwmController {
     }
 
     fn min_exp(&self) -> f64 {
-        // Never more than half of the room the search has, or the scan would have no range.
-        let floor = self.min_exp_floor.min(0.5 * self.exposure_cap());
+        // Leave the scan some range: half of the cap, or 8 ms, whichever lets the floor go higher
+        // (a 25 ms floor under a 33 ms cap is fine: 8 grid points of 1 ms remain).
+        let cap = self.exposure_cap();
+        let floor = self.min_exp_floor.min((0.5 * cap).max(cap - 8000.0));
         self.limits.min_exposure_us.max(floor).min(self.exposure_cap())
     }
 
@@ -562,7 +592,9 @@ impl PwmController {
     /// modulation ~ 1 / (pi f e)) and the minima lose their contrast against the noise.
     fn hill_cap(&self) -> f64 {
         // Free once the lock is verified (`rechecking`, `scale_up`) or when the row rate is known.
-        if self.rechecking || self.line_rate_hz > 0.0 {
+        // Also once a frequency is assumed (rows estimate, coarse null): the limit exists for the
+        // blind sweep, which does not know where the nulls are.
+        if self.rechecking || self.line_rate_hz > 0.0 || self.f_hz > 0.0 {
             self.exposure_cap()
         } else {
             self.exposure_cap().min((1.2e6 / MIN_HZ).max(self.min_exp() * 2.5))
@@ -570,6 +602,16 @@ impl PwmController {
     }
 
     fn search(&mut self, profile: &[f64]) -> crate::controller::Command {
+        if self.settle_frames > 0 {
+            self.settle_frames -= 1;
+            // This frame was taken at the exposure of the previous phase: unless that is already
+            // the exposure the search uses, it says nothing about the flicker (a 28 ms frame
+            // near a null gave a wrong frequency and an instant, unverified lock).
+            let mine = self.min_exp();
+            if (self.last_exposure - mine).abs() > 0.02 * mine {
+                return self.emit(mine, State::Search, 0.0);
+            }
+        }
         let prev = if self.profiles.len() >= 2 {
             Some(self.profiles[self.profiles.len() - 2].as_slice())
         } else {
@@ -850,10 +892,12 @@ impl PwmController {
         // at +-2 % (and +-4 % right after a scale-up), and every probe changes the exposure the
         // sensor uses, so a recording shows a brightness step each time. Once the base sits on
         // the null, probing costs the video and buys nothing.
-        if degraded && self.line_rate_hz == 0.0 {
+        let row_mode = self.line_rate_hz > 0.0 && !self.blind_lock;
+        if degraded && !row_mode {
             self.frames_since_check = 0;
             // The flicker changed (or stopped): search again from scratch.
             if residual > 0.05 {
+                self.blind_lock = false;
                 self.profiles.clear();
                 self.f_hz = 0.0;
                 self.confidence = 0.0;
@@ -872,7 +916,7 @@ impl PwmController {
         }
         // The line-rate path re-measures f from short-exposure profiles, so it needs a periodic
         // recalibration. Blind mode has no profiles to re-measure: staying on the null is the job.
-        if (stale || degraded) && self.line_rate_hz > 0.0 {
+        if (stale || degraded) && row_mode {
             self.frames_since_check = 0;
             self.profiles.clear();
             self.phase = Phase::Recalib;
@@ -1030,7 +1074,10 @@ impl PwmController {
                 if e > self.limits.max_exposure_us {
                     break;
                 }
-                if e >= self.limits.min_exposure_us && e + self.limits.sustain_us <= frame_us {
+                // Past the brightness ceiling even the lowest ISO overexposes; k = 1 is kept
+                // regardless (a valid null, slightly bright, beats no lock).
+                let within_ceiling = self.max_exp_ceiling <= 0.0 || e <= self.max_exp_ceiling || k == 1;
+                if e >= self.limits.min_exposure_us && e + self.limits.sustain_us <= frame_us && within_ceiling {
                     chosen = Some((*fps, e));
                 }
             }

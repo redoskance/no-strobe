@@ -426,3 +426,83 @@ fn locks_on_a_multiple_of_the_period_in_a_scene_full_of_structure() {
         );
     }
 }
+
+/// The row readout rate often becomes known after the controller started blind (the camera reports
+/// a rolling-shutter skew with its first capture results, the sustain value is absent at open).
+/// The state built blind must not survive the switch: a Pixel / Xperia never locked on a 100 Hz
+/// lamp in a probe that switched at frame 30, 60, 90 ... (review of 2026-11-07).
+#[test]
+fn locks_when_the_line_rate_is_learned_mid_run() {
+    let line_rate = ROWS as f64 * 30.0; // the whole frame is read in one frame time
+    for f_hz in [100.0, 500.0] {
+        for switch_at in [30usize, 60, 90, 200, 400] {
+            let mut c = PwmController::new(limits(), 0.0);
+            let mut phase = 0.0;
+            let mut last = c.on_profile(&profile_for(1000.0, f_hz, phase, 0.3, line_rate, ROWS));
+            let mut locked = false;
+            for i in 0..2500usize {
+                phase += 0.3337;
+                if i == switch_at {
+                    c.set_line_rate(line_rate);
+                }
+                last = c.on_profile(&profile_for(last.exposure_us, f_hz, phase, 0.3, line_rate, ROWS));
+                if last.state == State::Locked && i > switch_at {
+                    locked = true;
+                    break;
+                }
+            }
+            assert!(locked, "{f_hz} Hz, line rate learned at frame {switch_at}: never locked (last {} us)", last.exposure_us);
+            let t_us = 1e6 / f_hz;
+            let k = (last.exposure_us / t_us).round();
+            assert!(
+                k >= 1.0 && (last.exposure_us - k * t_us).abs() < 0.06 * t_us,
+                "{f_hz} Hz, switch at {switch_at}: {} us is not a multiple of {t_us} us",
+                last.exposure_us
+            );
+        }
+    }
+}
+
+/// The brightness ceiling (budget / lowest ISO) bounds every exposure the controller commands once
+/// it is known, including the one the row path locks on. Probe of the review: 100 Hz, 30 fps,
+/// 12 ms sustain, ceiling 10 ms: six commands went above it.
+#[test]
+fn never_commands_an_exposure_above_the_brightness_ceiling() {
+    let mut l = limits();
+    l.sustain_us = 12000.0;
+    let line_rate = ROWS as f64 * 30.0;
+    let mut c = PwmController::new(l, line_rate);
+    c.set_max_exposure(10000.0);
+    let mut phase = 0.0;
+    let mut last = c.on_profile(&profile_for(1000.0, 100.0, phase, 0.3, line_rate, ROWS));
+    for i in 0..600 {
+        phase += 0.3337;
+        last = c.on_profile(&profile_for(last.exposure_us, 100.0, phase, 0.3, line_rate, ROWS));
+        assert!(last.exposure_us <= 10000.5, "frame {i}: commanded {} us above the 10000 us ceiling", last.exposure_us);
+    }
+}
+
+/// With a floor (the ISO limit) the search must still have a range to scan, and still lock.
+#[test]
+fn blind_scan_with_an_iso_floor_locks_on_a_long_multiple() {
+    let line_rate = ROWS as f64 * 30.0;
+    let mut l = limits();
+    l.sustain_us = 0.0;
+    let mut c = PwmController::new(l, 0.0);
+    c.set_min_exposure(11700.0); // brightness budget / ISO 3200 on the dim lamp scene
+    let mut phase = 0.0;
+    let mut last = c.on_profile(&profile_for(1000.0, 100.0, phase, 0.3, line_rate, ROWS));
+    let mut lowest = f64::INFINITY;
+    for _ in 0..3000 {
+        phase += 0.3337;
+        last = c.on_profile(&profile_for(last.exposure_us, 100.0, phase, 0.3, line_rate, ROWS));
+        lowest = lowest.min(last.exposure_us);
+        if last.state == State::Locked {
+            break;
+        }
+    }
+    assert!(lowest >= 11000.0, "searched at {lowest} us, below the 11.7 ms floor (ISO too high)");
+    assert_eq!(last.state, State::Locked, "never locked above the floor");
+    let k = (last.exposure_us / 10000.0).round();
+    assert!(k >= 2.0 && (last.exposure_us - k * 10000.0).abs() < 600.0, "{} us is not a multiple of 10 ms", last.exposure_us);
+}

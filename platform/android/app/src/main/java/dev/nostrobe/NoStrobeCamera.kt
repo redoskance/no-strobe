@@ -764,6 +764,7 @@ class NoStrobeCamera(
     // Shortest exposure this sensor really delivers. The advertised range can be shorter
     // (and differs per lens): learned when the sensor keeps returning a longer exposure.
     private var minExposureOverrideUs = 0.0
+    private var maxExposureOverrideUs = 0.0
     private var lastActualNs = 0L
     private var mismatchRun = 0
 
@@ -771,9 +772,12 @@ class NoStrobeCamera(
         val base = Camera2Sync.limitsFromCharacteristics(
             manager.getCameraCharacteristics(activePhysicalId ?: cameraId)
         )
-        return if (minExposureOverrideUs > base.minExposureUs) {
-            base.copy(minExposureUs = minExposureOverrideUs)
-        } else base
+        var limits = base
+        if (minExposureOverrideUs > limits.minExposureUs) limits = limits.copy(minExposureUs = minExposureOverrideUs)
+        if (maxExposureOverrideUs > 0.0 && maxExposureOverrideUs < limits.maxExposureUs) {
+            limits = limits.copy(maxExposureUs = maxOf(maxExposureOverrideUs, limits.minExposureUs))
+        }
+        return limits
     }
 
     /**
@@ -947,13 +951,20 @@ class NoStrobeCamera(
             if (!exposureMatches(frameExposureNs, requestedExposureNs)) {
                 staleFrames += 1
                 val actual = frameExposureNs
-                mismatchRun = if (actual > requestedExposureNs &&
-                    abs(actual - lastActualNs) <= actual / 100) mismatchRun + 1 else 0
+                mismatchRun = if (abs(actual - lastActualNs) <= actual / 100) mismatchRun + 1 else 0
                 lastActualNs = actual
                 if (mismatchRun >= 20) {
-                    // Requested below the sensor's real minimum: relearn the range.
-                    minExposureOverrideUs = actual / 1000.0 * 1.02
-                    Log.i(TAG, "sensor minimum exposure is about ${actual / 1000} us, not the advertised one")
+                    // The sensor keeps applying the same exposure, not the requested one: relearn
+                    // the range. Above the request: its real minimum. Below it: a real maximum
+                    // lower than the advertised one (frame duration, vendor cap). Without this the
+                    // 60 stale frames below would switch manual exposure off for good.
+                    if (actual > requestedExposureNs) {
+                        minExposureOverrideUs = actual / 1000.0 * 1.02
+                        Log.i(TAG, "sensor minimum exposure is about ${actual / 1000} us, not the advertised one")
+                    } else {
+                        maxExposureOverrideUs = actual / 1000.0 * 0.98
+                        Log.i(TAG, "sensor maximum exposure is about ${actual / 1000} us here, not the advertised one")
+                    }
                     mismatchRun = 0
                     staleFrames = 0
                     pwm?.close(); pwm = null

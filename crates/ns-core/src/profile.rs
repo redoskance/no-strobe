@@ -24,7 +24,9 @@ pub fn extract_row_profile_into(
 ) {
     let r_step = row_step.max(1);
     let c_step = col_step.max(1);
-    let out_len = height / r_step;
+    // step_by(r_step) visits ceil(height / r_step) rows: an odd height with a step of 2 wrote
+    // one past the end of a floor-sized slice (a panic across the FFI boundary aborts the app).
+    let out_len = height.div_ceil(r_step);
     assert!(out.len() >= out_len, "output slice too small");
 
     if width == 0 || height == 0 || y_plane.is_empty() {
@@ -85,7 +87,7 @@ pub fn extract_row_profile(
     col_step: usize,
 ) -> Vec<f64> {
     let r_step = row_step.max(1);
-    let mut out = vec![0.0; height / r_step];
+    let mut out = vec![0.0; height.div_ceil(r_step)];
     extract_row_profile_into(
         y_plane,
         width,
@@ -288,6 +290,18 @@ fn sum_contiguous_row_scalar(slice: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn odd_height_with_a_row_step_does_not_overrun() {
+        // 1079 rows read every second row: 540 rows (0, 2, ..., 1078), not 539.
+        let plane = vec![100u8; 8 * 1079];
+        let p = extract_row_profile(&plane, 8, 1079, 8, 1, 2, 1);
+        assert_eq!(p.len(), 540);
+        assert!(p.iter().all(|v| (*v - 100.0 / 255.0).abs() < 1e-9));
+        // Even heights are unchanged.
+        let q = extract_row_profile(&vec![0u8; 8 * 1080], 8, 1080, 8, 1, 2, 1);
+        assert_eq!(q.len(), 540);
+    }
 
     #[test]
     fn test_uniform_plane() {

@@ -696,7 +696,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * A tablet or an unfolded foldable held upright (clearly taller than wide): the side-by-side layout gives
      * the whole width to the viewfinder and the controls none. Stack them instead, viewfinder on top and
-     * the controls under it. A nearly square screen (an unfolded Pixel Fold) keeps the side-by-side layout.
+     * the controls under it. A nearly square screen (an unfolded foldable) keeps the side-by-side layout.
      */
     private fun stackIfUpright(aspect: AspectFrameLayout?) {
         val panel = findViewById<android.view.View?>(R.id.rightPanel) ?: return

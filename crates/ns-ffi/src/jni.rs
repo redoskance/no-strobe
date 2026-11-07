@@ -401,6 +401,8 @@ pub extern "system" fn Java_dev_nostrobe_NsJni_nativeApplyPlaneGains(
     _class: JClass,
     src_buf: JByteBuffer,
     dst_buf: JByteBuffer,
+    src_offset: jint,
+    dst_offset: jint,
     width: jint,
     height: jint,
     src_row_stride: jint,
@@ -421,6 +423,11 @@ pub extern "system" fn Java_dev_nostrobe_NsJni_nativeApplyPlaneGains(
     if s_ptr.is_null() || d_ptr.is_null() || s_len == 0 || d_len == 0 {
         return;
     }
+    let s_off = src_offset.max(0) as usize;
+    let d_off = dst_offset.max(0) as usize;
+    if s_off >= s_len || d_off >= d_len {
+        return;
+    }
 
     let gains_vec = if !row_gains.is_null() {
         unsafe {
@@ -432,8 +439,8 @@ pub extern "system" fn Java_dev_nostrobe_NsJni_nativeApplyPlaneGains(
         None
     };
 
-    let s_slice = unsafe { std::slice::from_raw_parts(s_ptr, s_len) };
-    let d_slice = unsafe { std::slice::from_raw_parts_mut(d_ptr, d_len) };
+    let s_slice = unsafe { std::slice::from_raw_parts(s_ptr.add(s_off), s_len - s_off) };
+    let d_slice = unsafe { std::slice::from_raw_parts_mut(d_ptr.add(d_off), d_len - d_off) };
 
     ns_core::restorer::apply_plane_gains(
         s_slice,
@@ -446,6 +453,56 @@ pub extern "system" fn Java_dev_nostrobe_NsJni_nativeApplyPlaneGains(
         dst_pixel_stride.max(0) as usize,
         gains_vec.as_deref(),
         temporal_gain,
+    );
+}
+
+/// Native accelerated chroma gain application centered at 128 between direct ByteBuffers.
+#[no_mangle]
+pub extern "system" fn Java_dev_nostrobe_NsJni_nativeApplyChromaPlaneGains(
+    env: JNIEnv,
+    _class: JClass,
+    src_buf: JByteBuffer,
+    dst_buf: JByteBuffer,
+    src_offset: jint,
+    dst_offset: jint,
+    width: jint,
+    height: jint,
+    src_row_stride: jint,
+    src_pixel_stride: jint,
+    dst_row_stride: jint,
+    dst_pixel_stride: jint,
+    gain: jdouble,
+) {
+    let (s_ptr, s_len) = match env.get_direct_buffer_address(&src_buf) {
+        Ok(ptr) => (ptr, env.get_direct_buffer_capacity(&src_buf).unwrap_or(0)),
+        Err(_) => return,
+    };
+    let (d_ptr, d_len) = match env.get_direct_buffer_address(&dst_buf) {
+        Ok(ptr) => (ptr, env.get_direct_buffer_capacity(&dst_buf).unwrap_or(0)),
+        Err(_) => return,
+    };
+    if s_ptr.is_null() || d_ptr.is_null() || s_len == 0 || d_len == 0 {
+        return;
+    }
+    let s_off = src_offset.max(0) as usize;
+    let d_off = dst_offset.max(0) as usize;
+    if s_off >= s_len || d_off >= d_len {
+        return;
+    }
+
+    let s_slice = unsafe { std::slice::from_raw_parts(s_ptr.add(s_off), s_len - s_off) };
+    let d_slice = unsafe { std::slice::from_raw_parts_mut(d_ptr.add(d_off), d_len - d_off) };
+
+    ns_core::restorer::apply_chroma_plane_gains(
+        s_slice,
+        d_slice,
+        width.max(0) as usize,
+        height.max(0) as usize,
+        src_row_stride.max(0) as usize,
+        src_pixel_stride.max(0) as usize,
+        dst_row_stride.max(0) as usize,
+        dst_pixel_stride.max(0) as usize,
+        gain,
     );
 }
 

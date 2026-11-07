@@ -90,6 +90,8 @@ object NsJni {
     private external fun nativeApplyPlaneGains(
         srcBuf: java.nio.Buffer,
         dstBuf: java.nio.Buffer,
+        srcOffset: Int,
+        dstOffset: Int,
         width: Int,
         height: Int,
         srcRowStride: Int,
@@ -98,6 +100,20 @@ object NsJni {
         dstPixelStride: Int,
         rowGains: DoubleArray?,
         temporalGain: Double,
+    )
+
+    private external fun nativeApplyChromaPlaneGains(
+        srcBuf: java.nio.Buffer,
+        dstBuf: java.nio.Buffer,
+        srcOffset: Int,
+        dstOffset: Int,
+        width: Int,
+        height: Int,
+        srcRowStride: Int,
+        srcPixelStride: Int,
+        dstRowStride: Int,
+        dstPixelStride: Int,
+        gain: Double,
     )
 
     /** Extract the vertical row profile from a direct Y-buffer using SIMD. */
@@ -124,6 +140,8 @@ object NsJni {
     fun applyPlaneGains(
         srcBuf: java.nio.Buffer,
         dstBuf: java.nio.Buffer,
+        srcOffset: Int = srcBuf.position(),
+        dstOffset: Int = dstBuf.position(),
         width: Int,
         height: Int,
         srcRowStride: Int,
@@ -135,6 +153,8 @@ object NsJni {
     ) = nativeApplyPlaneGains(
         srcBuf,
         dstBuf,
+        srcOffset,
+        dstOffset,
         width,
         height,
         srcRowStride,
@@ -143,6 +163,33 @@ object NsJni {
         dstPixelStride,
         rowGains,
         temporalGain,
+    )
+
+    /** Native SIMD/GPU chroma gain application centered at 128 between direct ByteBuffers. */
+    fun applyChromaPlaneGains(
+        srcBuf: java.nio.Buffer,
+        dstBuf: java.nio.Buffer,
+        srcOffset: Int = srcBuf.position(),
+        dstOffset: Int = dstBuf.position(),
+        width: Int,
+        height: Int,
+        srcRowStride: Int,
+        srcPixelStride: Int,
+        dstRowStride: Int,
+        dstPixelStride: Int,
+        gain: Double = 1.0,
+    ) = nativeApplyChromaPlaneGains(
+        srcBuf,
+        dstBuf,
+        srcOffset,
+        dstOffset,
+        width,
+        height,
+        srcRowStride,
+        srcPixelStride,
+        dstRowStride,
+        dstPixelStride,
+        gain,
     )
 
     /** Compute per-row gains to flatten rolling-shutter banding in one frame. */

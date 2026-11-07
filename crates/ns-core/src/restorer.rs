@@ -247,3 +247,80 @@ pub fn apply_plane_gains(
         }
     }
 }
+
+/// Applies chroma gains centered at 128 (U and V planes in YUV) from a source plane into a destination plane,
+/// honouring row and pixel strides.
+pub fn apply_chroma_plane_gains(
+    src: &[u8],
+    dst: &mut [u8],
+    width: usize,
+    height: usize,
+    src_row_stride: usize,
+    src_pixel_stride: usize,
+    dst_row_stride: usize,
+    dst_pixel_stride: usize,
+    gain: f64,
+) {
+    if width == 0 || height == 0 || src.is_empty() || dst.is_empty() {
+        return;
+    }
+
+    let eff_gain = if gain <= 0.0 {
+        1.0
+    } else {
+        // Soft compression on chroma gain to avoid amplifying chroma noise on dark frames
+        gain.powf(0.75).clamp(0.25, 2.5)
+    };
+
+    let is_identity = (eff_gain - 1.0).abs() < 1e-4;
+
+    // Fast path: pure copy without gains, contiguous pixel stride
+    if is_identity && src_pixel_stride == 1 && dst_pixel_stride == 1 {
+        let copy_w = width.min(src_row_stride).min(dst_row_stride);
+        for y in 0..height {
+            let s_off = y * src_row_stride;
+            let d_off = y * dst_row_stride;
+            if s_off + copy_w <= src.len() && d_off + copy_w <= dst.len() {
+                dst[d_off..d_off + copy_w].copy_from_slice(&src[s_off..s_off + copy_w]);
+            }
+        }
+        return;
+    }
+
+    let mut lut = [128u8; 256];
+    for i in 0..256 {
+        let delta = (i as f64 - 128.0) * eff_gain;
+        lut[i] = (128.0 + delta).round().clamp(0.0, 255.0) as u8;
+    }
+
+    // Contiguous pixel strides
+    if src_pixel_stride == 1 && dst_pixel_stride == 1 {
+        for y in 0..height {
+            let s_off = y * src_row_stride;
+            let d_off = y * dst_row_stride;
+            if s_off + width <= src.len() && d_off + width <= dst.len() {
+                let s_row = &src[s_off..s_off + width];
+                let d_row = &mut dst[d_off..d_off + width];
+                for (s, d) in s_row.iter().zip(d_row.iter_mut()) {
+                    *d = lut[*s as usize];
+                }
+            }
+        }
+        return;
+    }
+
+    // Strided path (e.g. interleaved UV pixel_stride == 2)
+    for y in 0..height {
+        let s_row_off = y * src_row_stride;
+        let d_row_off = y * dst_row_stride;
+
+        for x in 0..width {
+            let s_idx = s_row_off + x * src_pixel_stride;
+            let d_idx = d_row_off + x * dst_pixel_stride;
+            if s_idx < src.len() && d_idx < dst.len() {
+                dst[d_idx] = lut[src[s_idx] as usize];
+            }
+        }
+    }
+}
+

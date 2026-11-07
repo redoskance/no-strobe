@@ -73,4 +73,34 @@ class OnDevicePostTest {
             OnDevicePost.removeListener(listener)
         }
     }
+
+    @Test
+    fun adaptiveGainPreservesSceneCuts() {
+        val means = DoubleArray(60) { i -> if (i < 30) 0.1 else 0.8 }
+        val gains = OnDevicePost.temporalGainAdaptive(means, window = 15, maxGain = 4.0, cutThreshold = 0.25)
+        assertEquals(60, gains.size)
+        // Near the hard boundary (frames 29 and 30), gains should stay close to 1.0
+        assertTrue("Frame 29 gain should not bleed across scene cut: ${gains[29]}", Math.abs(gains[29] - 1.0) < 0.2)
+        assertTrue("Frame 30 gain should not bleed across scene cut: ${gains[30]}", Math.abs(gains[30] - 1.0) < 0.2)
+    }
+
+    @Test
+    fun adaptiveGainFlattensAlternatingFlicker() {
+        val means = DoubleArray(30) { i -> if (i % 2 == 0) 0.6 else 0.4 }
+        val gains = OnDevicePost.temporalGainAdaptive(means, window = 15, maxGain = 4.0, cutThreshold = 0.25)
+        val mid = 15
+        val correctedEven = means[mid] * gains[mid]
+        val correctedOdd = means[mid + 1] * gains[mid + 1]
+        assertEquals(0.5, correctedEven, 0.05)
+        assertEquals(0.5, correctedOdd, 0.05)
+    }
+
+    @Test
+    fun darkFrameSoftKneeCapsNoiseBoost() {
+        val means = DoubleArray(15) { 0.4 }
+        means[7] = 0.02 // Pitch dark drop
+        val gains = OnDevicePost.temporalGainAdaptive(means, window = 15, maxGain = 4.0, cutThreshold = 0.25)
+        // With soft-knee clamp on very dark frames (< 0.15), gain is capped well below 4.0
+        assertTrue("Noise boost should be capped below 4.0 on pitch dark frames: ${gains[7]}", gains[7] < 2.5)
+    }
 }

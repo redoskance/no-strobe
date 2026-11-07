@@ -710,8 +710,19 @@ class GalleryActivity : AppCompatActivity() {
         executeLocalPost(item)
     }
 
+    private fun getClipsDir(): File {
+        val ext = getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+        if (ext != null) {
+            val d = File(ext, "clips")
+            if ((d.exists() && d.canWrite()) || d.mkdirs()) {
+                if (d.canWrite()) return d
+            }
+        }
+        return File(filesDir, "clips").apply { mkdirs() }
+    }
+
     private fun executeLocalPost(item: MediaItem) {
-        val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips").apply { mkdirs() }
+        val clipsDir = getClipsDir()
 
         postProgressContainer.visibility = View.VISIBLE
         postProgressBar.progress = 0
@@ -771,7 +782,7 @@ class GalleryActivity : AppCompatActivity() {
         }
         val item = mediaItems.getOrNull(selectedIndex) ?: return
         if (item.type != MediaType.VIDEO) return
-        val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips").apply { mkdirs() }
+        val clipsDir = getClipsDir()
         val token = LanServerConfig.getServerToken(this)
         val dst = File(clipsDir, item.baseName + "-fixed.mp4")
 
@@ -896,7 +907,7 @@ class GalleryActivity : AppCompatActivity() {
                 contentResolver.update(uri, values, null, null)
                 "Movies/no-strobe/$displayName"
             } else {
-                val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+                val dir = getClipsDir()
                 src.copyTo(File(dir, displayName), overwrite = true).path
             }
         } catch (e: Exception) {

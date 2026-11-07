@@ -3,12 +3,14 @@ package dev.nostrobe
 import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import java.io.File
 import java.nio.ByteBuffer
+import kotlin.math.roundToInt
 
 /**
  * Post-processing on the phone: flattens whole-frame brightness pumping (the same idea as the
@@ -57,7 +59,7 @@ object OnDevicePost {
                 onProgress((pct * 0.3).toInt())
             })
             if (means.isEmpty()) throw PostException("no frames decoded")
-            val gains = temporalGain(means.toDoubleArray(), WINDOW, MAX_GAIN)
+            val gains = temporalGainAdaptive(means.toDoubleArray(), WINDOW, MAX_GAIN, 0.25)
             // Pass 2: apply gains and encode (30% - 100% progress)
             encodeWithGains(src, tmp, gains, lineRateHz) { pct ->
                 onProgress(30 + (pct * 0.7).toInt())
@@ -71,6 +73,64 @@ object OnDevicePost {
             synchronized(this) {
                 isProcessing = false
                 listeners.forEach { it(false) }
+            }
+        }
+    }
+
+    /**
+     * Adaptive temporal gain with edge-preserving bilateral filtering:
+     * blends local temporal brightness with Gaussian weights while respecting scene cuts
+     * and intentional blackouts. Also applies a soft-knee clamp on very dark frames to prevent
+     * grain and thermal noise explosion.
+     * Matches `ns_core::restorer::temporal_gain_adaptive`.
+     */
+    fun temporalGainAdaptive(
+        means: DoubleArray,
+        window: Int = WINDOW,
+        maxGain: Double = MAX_GAIN,
+        cutThreshold: Double = 0.25,
+    ): DoubleArray {
+        val w = maxOf(window, 3) or 1
+        val half = w / 2
+        val n = means.size
+        if (n == 0) return DoubleArray(0)
+        val sigmaT = maxOf(half.toDouble(), 1.0)
+        val sigmaV = maxOf(cutThreshold, 0.01)
+
+        return DoubleArray(n) { i ->
+            val centerVal = means[i]
+            if (centerVal <= 0.0) {
+                1.0
+            } else {
+                var weightedSum = 0.0
+                var weightSum = 0.0
+
+                val lo = maxOf(0, i - half)
+                val hi = minOf(n, i + half + 1)
+
+                for (j in lo until hi) {
+                    val dt = (j - i).toDouble()
+                    val dv = Math.abs(means[j] - centerVal)
+
+                    // Skip hard cuts
+                    if (dv > cutThreshold * 2.0) continue
+
+                    val wt = Math.exp(-0.5 * Math.pow(dt / sigmaT, 2.0))
+                    val wv = Math.exp(-0.5 * Math.pow(dv / sigmaV, 2.0))
+                    val weight = wt * wv
+
+                    weightedSum += means[j] * weight
+                    weightSum += weight
+                }
+
+                val target = if (weightSum > 1e-6) weightedSum / weightSum else centerVal
+                // Soft-knee clamp on very dark frames (< 15% luma) to prevent thermal noise burst
+                val effMaxGain = if (centerVal < 0.15) {
+                    1.0 + (maxGain - 1.0) * (centerVal / 0.15).coerceIn(0.25, 1.0)
+                } else {
+                    maxGain
+                }
+                (target / centerVal).coerceIn(1.0 / effMaxGain, effMaxGain)
             }
         }
     }
@@ -198,14 +258,23 @@ object OnDevicePost {
         onProgress: (Int) -> Unit
     ) {
         // MediaMetadataRetriever is AutoCloseable only from API 29: release it by hand (minSdk 28).
-        val rotation = MediaMetadataRetriever().let { r ->
-            try {
-                r.setDataSource(srcFile.path)
-                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-            } finally {
-                r.release()
-            }
+        var rotation = 0
+        var srcFps = 30
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(srcFile.path)
+            rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val rate = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()
+                ?: (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toDoubleOrNull()?.let { count ->
+                    val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0
+                    if (durMs > 0.0) count * 1000.0 / durMs else null
+                })
+            srcFps = rate?.roundToInt()?.coerceIn(15, 240) ?: 30
+        } catch (_: Exception) {
+        } finally {
+            r.release()
         }
+
         // The audio track (if any) is copied as is, so the fixed clip keeps its sound.
         val audioEx = MediaExtractor().apply { setDataSource(srcFile.path) }
         var audioFormat: MediaFormat? = null
@@ -257,14 +326,18 @@ object OnDevicePost {
                 if (encoder == null) {
                     val w = image.width and 1.inv()
                     val h = image.height and 1.inv()
-                    val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
+                    val preferHevc = isHevcEncoderAvailable(w, h)
+                    val mime = if (preferHevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+                    val askBitrate = if (preferHevc) 18_000_000 else 24_000_000
+                    val fmt = MediaFormat.createVideoFormat(mime, w, h).apply {
                         setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-                        setInteger(MediaFormat.KEY_BIT_RATE, 20_000_000)
-                        setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+                        setInteger(MediaFormat.KEY_BIT_RATE, askBitrate)
+                        setInteger(MediaFormat.KEY_FRAME_RATE, srcFps)
+                        setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
                         setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
                         if (android.os.Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
                     }
-                    encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also {
+                    encoder = MediaCodec.createEncoderByType(mime).also {
                         it.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                         it.start()
                     }
@@ -287,9 +360,12 @@ object OnDevicePost {
                     NsJni.rowGain(prof, lineRateHz)?.takeIf { it.isNotEmpty() }
                 } else null
 
-                copyPlane(image.planes[0], image.width, image.height, dst.planes[0], dst.width, dst.height, g, rowGains)
-                copyPlane(image.planes[1], image.width / 2, image.height / 2, dst.planes[1], dst.width / 2, dst.height / 2, 1.0, null)
-                copyPlane(image.planes[2], image.width / 2, image.height / 2, dst.planes[2], dst.width / 2, dst.height / 2, 1.0, null)
+                // Plane 0: Luma Y
+                copyPlane(image.planes[0], image.width, image.height, dst.planes[0], dst.width, dst.height, g, rowGains, isChroma = false)
+                // Plane 1: Chroma U (Cb) centered around 128
+                copyPlane(image.planes[1], image.width / 2, image.height / 2, dst.planes[1], dst.width / 2, dst.height / 2, g, null, isChroma = true)
+                // Plane 2: Chroma V (Cr) centered around 128
+                copyPlane(image.planes[2], image.width / 2, image.height / 2, dst.planes[2], dst.width / 2, dst.height / 2, g, null, isChroma = true)
                 val size = dst.width * dst.height * 3 / 2
                 dst.close()
                 enc.queueInputBuffer(idx, 0, size, pts, 0)
@@ -340,47 +416,89 @@ object OnDevicePost {
         dh: Int,
         gain: Double = 1.0,
         rowGains: DoubleArray? = null,
+        isChroma: Boolean = false,
     ) {
         val w = minOf(sw, dw)
         val h = minOf(sh, dh)
         val sb = s.buffer
         val db = d.buffer
+        val sPos = sb.position()
+        val dPos = db.position()
+
         if (sb.isDirect && db.isDirect) {
-            NsJni.applyPlaneGains(
-                sb,
-                db,
-                w,
-                h,
-                s.rowStride,
-                s.pixelStride,
-                d.rowStride,
-                d.pixelStride,
-                rowGains,
-                gain,
-            )
+            if (isChroma) {
+                NsJni.applyChromaPlaneGains(
+                    sb,
+                    db,
+                    sPos,
+                    dPos,
+                    w,
+                    h,
+                    s.rowStride,
+                    s.pixelStride,
+                    d.rowStride,
+                    d.pixelStride,
+                    gain,
+                )
+            } else {
+                NsJni.applyPlaneGains(
+                    sb,
+                    db,
+                    sPos,
+                    dPos,
+                    w,
+                    h,
+                    s.rowStride,
+                    s.pixelStride,
+                    d.rowStride,
+                    d.pixelStride,
+                    rowGains,
+                    gain,
+                )
+            }
             return
         }
-        val lut = if (gain != 1.0) IntArray(256) { v -> Math.round(v * gain).toInt().coerceIn(0, 255) } else null
+
+        val effChromaGain = if (gain <= 0.0) 1.0 else Math.pow(gain, 0.75).coerceIn(0.25, 2.5)
+        val lut = if (gain != 1.0) IntArray(256) { v ->
+            if (isChroma) {
+                val delta = (v - 128.0) * effChromaGain
+                Math.round(128.0 + delta).toInt().coerceIn(0, 255)
+            } else {
+                Math.round(v * gain).toInt().coerceIn(0, 255)
+            }
+        } else null
+
         val row = ByteArray(maxOf(s.rowStride, d.rowStride))
         for (y in 0 until h) {
-            val effLut = if (rowGains != null && y < rowGains.size) {
+            val effLut = if (!isChroma && rowGains != null && y < rowGains.size) {
                 val combined = gain * rowGains[y]
                 IntArray(256) { v -> Math.round(v * combined).toInt().coerceIn(0, 255) }
             } else lut
 
             if (s.pixelStride == 1 && d.pixelStride == 1) {
-                sb.position(y * s.rowStride)
+                sb.position(sPos + y * s.rowStride)
                 sb.get(row, 0, w)
                 if (effLut != null) for (x in 0 until w) row[x] = effLut[row[x].toInt() and 0xFF].toByte()
-                db.position(y * d.rowStride)
+                db.position(dPos + y * d.rowStride)
                 db.put(row, 0, w)
             } else {
                 for (x in 0 until w) {
-                    var v = sb.get(y * s.rowStride + x * s.pixelStride).toInt() and 0xFF
+                    var v = sb.get(sPos + y * s.rowStride + x * s.pixelStride).toInt() and 0xFF
                     if (effLut != null) v = effLut[v]
-                    db.put(y * d.rowStride + x * d.pixelStride, v.toByte())
+                    db.put(dPos + y * d.rowStride + x * d.pixelStride, v.toByte())
                 }
             }
         }
+        sb.position(sPos)
+        db.position(dPos)
+    }
+
+    private fun isHevcEncoderAvailable(w: Int, h: Int): Boolean = try {
+        val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+        val fmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, w, h)
+        list.findEncoderForFormat(fmt) != null
+    } catch (_: Throwable) {
+        false
     }
 }

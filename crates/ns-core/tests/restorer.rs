@@ -123,3 +123,49 @@ fn test_temporal_gain_adaptive_preserves_scene_cuts() {
     assert!((g[29] - 1.0).abs() < 0.15, "frame 29 gain {}", g[29]);
     assert!((g[30] - 1.0).abs() < 0.15, "frame 30 gain {}", g[30]);
 }
+
+#[test]
+fn test_apply_chroma_plane_gains() {
+    let width = 32;
+    let height = 16;
+    let stride = 32;
+    let mut src = vec![128u8; stride * height];
+    let mut dst = vec![0u8; stride * height];
+
+    // Neutral gray (128) must stay 128 under any gain
+    ns_core::restorer::apply_chroma_plane_gains(
+        &src,
+        &mut dst,
+        width,
+        height,
+        stride,
+        1,
+        stride,
+        1,
+        2.0,
+    );
+    for &val in &dst {
+        assert_eq!(val, 128);
+    }
+
+    // Colored pixels should scale around 128
+    src[0] = 140; // +12 above 128
+    src[1] = 100; // -28 below 128
+    ns_core::restorer::apply_chroma_plane_gains(
+        &src,
+        &mut dst,
+        width,
+        height,
+        stride,
+        1,
+        stride,
+        1,
+        2.0,
+    );
+    // 2.0^0.75 ≈ 1.68179
+    // 128 + 12 * 1.68179 ≈ 128 + 20.18 = 148
+    assert_eq!(dst[0], 148);
+    // 128 - 28 * 1.68179 ≈ 128 - 47.09 = 81
+    assert_eq!(dst[1], 81);
+}
+

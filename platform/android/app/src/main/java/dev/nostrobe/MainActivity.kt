@@ -250,11 +250,11 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Menu debug dans $remaining tap${if (remaining > 1) "s" else ""}...", Toast.LENGTH_SHORT).show()
             } else if (debugTapCount >= 5) {
                 debugTapCount = 0
-                DiagnosticReport.showDialog(this, camera, lastCommand, currentPreviewSize)
+                showDebugDialog()
             }
         }
         status.setOnLongClickListener {
-            DiagnosticReport.showDialog(this, camera, lastCommand, currentPreviewSize)
+            showDebugDialog()
             true
         }
         recordButton = findViewById(R.id.record)
@@ -1251,8 +1251,7 @@ class MainActivity : AppCompatActivity() {
             if (saved) {
                 postButton.visibility = android.view.View.VISIBLE
                 postButton.text = "galerie"
-                val toastMsg = "📸 Photo enregistrée"
-                Toast.makeText(this, toastMsg, Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "📸 Photo enregistrée", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "Échec de l'enregistrement de la photo", Toast.LENGTH_LONG).show()
             }
@@ -1282,6 +1281,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun prefs() = getSharedPreferences("nostrobe", MODE_PRIVATE)
+
+    private fun showDebugDialog() {
+        DiagnosticReport.showDialog(
+            activity = this,
+            camera = camera,
+            lastCmd = lastCommand,
+            previewSize = currentPreviewSize,
+        )
+    }
 
     private fun openGallery(clip: File? = lastClip) {
         if (recorder != null) {

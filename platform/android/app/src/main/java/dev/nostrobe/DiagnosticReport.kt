@@ -161,12 +161,34 @@ object DiagnosticReport {
         return sb.toString()
     }
 
-    fun showDialog(activity: Activity, camera: NoStrobeCamera?, lastCmd: NsJni.NsCommand?, previewSize: android.util.Size?) {
+    fun showDialog(
+        activity: Activity,
+        camera: NoStrobeCamera?,
+        lastCmd: NsJni.NsCommand?,
+        previewSize: android.util.Size?,
+    ) {
         activity.window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         val reportMarkdown = generateReport(activity, camera, lastCmd, previewSize)
 
+        val container = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(36, 20, 36, 12)
+        }
+
+        val reportHeader = TextView(activity).apply {
+            text = "RAPPORT DE DIAGNOSTIC TECHNIQUE"
+            textSize = 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(activity.getColor(R.color.m3_on_surface_variant))
+            setPadding(0, 0, 0, 8)
+        }
+        container.addView(reportHeader)
+
         val scrollView = ScrollView(activity).apply {
-            setPadding(42, 28, 42, 14)
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                (activity.resources.displayMetrics.density * 260).toInt()
+            )
         }
         val textView = TextView(activity).apply {
             text = reportMarkdown
@@ -176,10 +198,11 @@ object DiagnosticReport {
             setTextColor(activity.getColor(R.color.m3_on_surface))
         }
         scrollView.addView(textView)
+        container.addView(scrollView)
 
         MaterialAlertDialogBuilder(activity)
-            .setTitle("Diagnostic & Rapport GitHub")
-            .setView(scrollView)
+            .setTitle("Menu Debug & Diagnostic")
+            .setView(container)
             .setPositiveButton("Issue GitHub") { _, _ ->
                 val title = URLEncoder.encode("[Rapport] ${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}", "UTF-8")
                 val body = URLEncoder.encode(

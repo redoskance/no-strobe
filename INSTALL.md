@@ -33,7 +33,7 @@ Par défaut, Android protège votre appareil en bloquant les applications qui ne
 2. **Avertissement Google Play Protect** : Play Protect peut afficher un avertissement indiquant que l'application provient d'un développeur non reconnu ou n'a pas été vérifiée.
    *(C'est attendu : l'APK est signé avec la clé de débogage et distribué hors du Play Store, donc non vérifié par Google. Si vous faites confiance à la source, poursuivez l'installation avec les options proposées par votre téléphone ; leur libellé dépend de la version d'Android.)*
 3. Dès que l'installation est terminée, appuyez sur **Ouvrir**.
-4. **Mise à jour** : chaque APK est signé avec la clé de débogage de la machine qui l'a compilé. Si votre téléphone refuse la mise à jour (*« L'application n'est pas installée : conflit avec un package existant »*), la version installée vient d'une autre clé : désinstallez-la d'abord. Les clips et photos enregistrés dans le dossier de l'application sont supprimés avec elle : copiez-les avant.
+4. **Mise à jour** : chaque APK est signé avec une clé de débogage jetable (celle de la machine qui l'a compilé), car le dépôt ne contient aucune clé de publication. Si votre téléphone refuse la mise à jour (*« L'application n'est pas installée : conflit avec un package existant »*), la version installée vient d'une autre clé : désinstallez-la d'abord. Les clips et photos enregistrés dans le dossier de l'application sont supprimés avec elle : copiez-les avant.
 
 #### Étape 4 : Autorisations nécessaires
 Au premier lancement, l'application vous demandera :
@@ -135,7 +135,7 @@ By default, Android blocks apps that do not come from the Play Store. To allow i
 2. **Google Play Protect warning**: Play Protect may show a warning that the app comes from an unknown or unverified developer.
    *(This is expected: the APK is signed with the debug key and distributed outside the Play Store, so Google has not verified it. If you trust the source, continue the installation with the options your phone offers; their wording depends on the Android version.)*
 3. Once installation completes, tap **Open**.
-4. **Updating**: every APK is signed with the debug key of the machine that built it. If your phone refuses the update (*"App not installed as it conflicts with an existing package"*), the installed version came from another key: uninstall it first. Clips and photos saved in the app's own folder are deleted with it: copy them out beforehand.
+4. **Updating**: every APK is signed with a throwaway debug key (the one of the machine that built it), because the repository holds no release key. If your phone refuses the update (*"App not installed as it conflicts with an existing package"*), the installed version came from another key: uninstall it first. Clips and photos saved in the app's own folder are deleted with it: copy them out beforehand.
 
 #### Step 4: Grant required permissions
 On first launch, grant:

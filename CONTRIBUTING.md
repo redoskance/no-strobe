@@ -103,6 +103,11 @@ adb -s <serial> pull /storage/emulated/0/Android/data/dev.nostrobe/cache/profile
 
 ---
 
+### Clés de signature
+
+- **Ne commitez jamais une clé de signature** (`*.keystore`, `*.jks`, mots de passe) : un dépôt public la donne à tout le monde, et Android accepterait un APK malveillant signé avec elle comme une mise à jour de l'application. `.gitignore` les exclut.
+- Une clé de publication se configure hors du dépôt : variables d'environnement ou `~/.gradle/gradle.properties` (`NOSTROBE_KEYSTORE_PATH`, `NOSTROBE_STORE_PASSWORD`, `NOSTROBE_KEY_ALIAS`, `NOSTROBE_KEY_PASSWORD`), et, pour le CI, les *secrets* du dépôt (`NOSTROBE_KEYSTORE_B64` en base64, plus les trois mots de passe/alias). Sans clé configurée, le build est signé avec la clé de débogage de la machine.
+
 ## 🇬🇧 Contributing Guide (English)
 
 The project films concerts: the app measures LED flicker and sets the sensor exposure to a whole number of flicker cycles (`exposure = k/f`), so frames and sensor rows integrate the exact same light: no horizontal banding, no brightness pumping.
@@ -182,3 +187,8 @@ adb -s <serial> shell am start -n dev.nostrobe/.MainActivity --ez dump_profiles 
 adb -s <serial> logcat -d -s nostrobe:V    # wait for the line "dump: done"
 adb -s <serial> pull /storage/emulated/0/Android/data/dev.nostrobe/cache/profiles.csv
 ```
+
+### Signing keys
+
+- **Never commit a signing key** (`*.keystore`, `*.jks`, passwords): a public repository gives it to everyone, and Android would accept a malicious APK signed with it as an update of the app. `.gitignore` excludes them.
+- A release key is configured outside the repository: environment variables or `~/.gradle/gradle.properties` (`NOSTROBE_KEYSTORE_PATH`, `NOSTROBE_STORE_PASSWORD`, `NOSTROBE_KEY_ALIAS`, `NOSTROBE_KEY_PASSWORD`) and, for CI, the repository *secrets* (`NOSTROBE_KEYSTORE_B64` as base64, plus the passwords and alias). Without a configured key the build is signed with the machine's debug key.

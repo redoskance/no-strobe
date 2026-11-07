@@ -80,7 +80,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.1'
+      # The release key lives in the repository SECRETS (a base64 keystore and its passwords), never in the
+      # repository. Without them the APK is signed with the runner's throwaway debug key.
+      - name: Release key (optional)
+        env:
+          KEYSTORE_B64: ${{ secrets.NOSTROBE_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nostrobe-release.keystore"
+            echo "NOSTROBE_KEYSTORE_PATH=$RUNNER_TEMP/nostrobe-release.keystore" >> "$GITHUB_ENV"
+            echo "release key configured"
+          else
+            echo "no release key configured: the APK is signed with a throwaway debug key"
+          fi
       - name: Build the APK
+        env:
+          NOSTROBE_STORE_PASSWORD: ${{ secrets.NOSTROBE_STORE_PASSWORD }}
+          NOSTROBE_KEY_ALIAS: ${{ secrets.NOSTROBE_KEY_ALIAS }}
+          NOSTROBE_KEY_PASSWORD: ${{ secrets.NOSTROBE_KEY_PASSWORD }}
         run: gradle :app:assembleDebug
         working-directory: platform/android
       - name: Publish the nightly release

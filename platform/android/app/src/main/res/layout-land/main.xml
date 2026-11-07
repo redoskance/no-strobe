@@ -125,6 +125,7 @@
             android:textColor="@color/icon_tint"
             android:textSize="10sp" />
 
+
             <TextView
                 android:id="@+id/evToggle"
                 android:layout_width="56dp"

@@ -147,6 +147,7 @@ class NoStrobeCamera(
     private var analysisSurface: Surface? = null
     private var photoReader: ImageReader? = null
     private var onPictureCallback: ((ByteArray) -> Unit)? = null
+
     /** A still burst in progress: JPEGs and capture results are collected until the pick. */
     private class Burst(
         val expected: Int,

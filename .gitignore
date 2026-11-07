@@ -46,3 +46,11 @@ AGENTS.md
 /tools/android-strobe-flasher/local.properties
 /tools/android-strobe-flasher/.gradle/
 /tools/android-strobe-flasher/app/build/
+
+# Signing keys and their passwords: never in the repository
+*.keystore
+*.jks
+*.p12
+*.pfx
+keystore.properties
+signing.properties

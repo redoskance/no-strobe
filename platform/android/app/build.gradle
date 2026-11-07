@@ -22,9 +22,33 @@ android {
         }
     }
 
+    // The release key is NEVER in the repository. A build signs with it only when the environment (or a
+    // gradle.properties outside the repository, e.g. ~/.gradle/gradle.properties) provides the keystore and
+    // its passwords: NOSTROBE_KEYSTORE_PATH, NOSTROBE_STORE_PASSWORD, NOSTROBE_KEY_ALIAS, NOSTROBE_KEY_PASSWORD.
+    // Without them the build is signed with the machine's own debug key (see CONTRIBUTING.md).
+    signingConfigs {
+        release {
+            def prop = { String name -> (System.getenv(name) ?: project.findProperty(name)) as String }
+            def path = prop("NOSTROBE_KEYSTORE_PATH")
+            def storePass = prop("NOSTROBE_STORE_PASSWORD")
+            def alias = prop("NOSTROBE_KEY_ALIAS")
+            def keyPass = prop("NOSTROBE_KEY_PASSWORD")
+            if (path && storePass && alias && keyPass && file(path).exists()) {
+                storeFile file(path)
+                storePassword storePass
+                keyAlias alias
+                keyPassword keyPass
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release.storeFile != null ? signingConfigs.release : signingConfigs.debug
+        }
+        debug {
+            signingConfig signingConfigs.release.storeFile != null ? signingConfigs.release : signingConfigs.debug
         }
     }
 

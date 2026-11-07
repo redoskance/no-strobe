@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Row of the shutter button in the portrait phone layout (layout/main.xml). Below 360 dp of width
+         (small phones, or the "largest" display size setting) the side buttons are smaller, so the
+         gallery, photo and shutter buttons never overlap. values-w360dp has the regular sizes. -->
+    <dimen name="shutter_side">44dp</dimen>
+    <dimen name="shutter_side_margin">0dp</dimen>
+    <dimen name="shutter_side_padding">4dp</dimen>
+    <dimen name="shutter_photo">44dp</dimen>
+    <!-- Distance from the centre of the shutter button (80 dp) to the centre of the photo button:
+         half of the shutter button + a gap + half of the photo button. -->
+    <dimen name="shutter_photo_offset">68dp</dimen>
+</resources>

@@ -293,28 +293,30 @@
 
             <TextView
                 android:id="@+id/post"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="@dimen/shutter_side"
+                android:layout_height="@dimen/shutter_side"
                 android:layout_gravity="start|center_vertical"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="@dimen/shutter_side_margin"
                 android:background="@drawable/bg_tool"
                 android:clickable="true"
                 android:drawableTint="@color/icon_tint"
                 android:drawableTop="@drawable/ic_gallery"
                 android:focusable="true"
                 android:gravity="center_horizontal"
-                android:paddingTop="8dp"
+                android:paddingTop="@dimen/shutter_side_padding"
                 android:text="@string/btn_gallery"
                 android:textColor="@color/icon_tint"
                 android:textSize="10sp"
                 android:visibility="gone" />
 
+            <!-- Centred, then moved left next to the shutter button (a fixed distance from the edge
+                 overlapped it on a narrow screen). -->
             <View
                 android:id="@+id/photo"
-                android:layout_width="54dp"
-                android:layout_height="54dp"
-                android:layout_gravity="center_vertical"
-                android:layout_marginStart="72dp"
+                android:layout_width="@dimen/shutter_photo"
+                android:layout_height="@dimen/shutter_photo"
+                android:layout_gravity="center"
+                android:layout_marginEnd="@dimen/shutter_photo_offset"
                 android:background="@drawable/capture_photo"
                 android:clickable="true"
                 android:contentDescription="photo"
@@ -332,8 +334,8 @@
 
             <TextView
                 android:id="@+id/flip"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="@dimen/shutter_side"
+                android:layout_height="@dimen/shutter_side"
                 android:layout_gravity="end|center_vertical"
                 android:layout_marginEnd="8dp"
                 android:background="@drawable/bg_tool"
@@ -342,7 +344,7 @@
                 android:drawableTop="@drawable/ic_flip"
                 android:focusable="true"
                 android:gravity="center_horizontal"
-                android:paddingTop="8dp"
+                android:paddingTop="@dimen/shutter_side_padding"
                 android:text="@string/btn_flip"
                 android:textColor="@color/icon_tint"
                 android:textSize="10sp" />

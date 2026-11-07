@@ -104,6 +104,17 @@ jobs:
           files: |
             platform/android/app/build/outputs/apk/debug/app-debug.apk
             target/release/no-strobe-post
+      - name: Update v0.2 release metadata and body
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
+        run: |
+          REL_ID=$(gh api repos/${{ github.repository }}/releases/tags/v0.2 --jq .id || true)
+          if [ -n "$REL_ID" ]; then
+            gh api -X PATCH repos/${{ github.repository }}/releases/$REL_ID \
+              -f name="v0.2: Video & Photo Modes, On-Device Post & LAN Offload" \
+              -F body=@RELEASE_NOTES.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish v0.2 release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/tags/v0.2'
         uses: softprops/action-gh-release@v2

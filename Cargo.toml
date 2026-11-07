@@ -5,3 +5,8 @@ members = ["crates/ns-core", "crates/ns-ffi", "crates/ns-post"]
 [profile.release]
 lto = true
 codegen-units = 1
+
+# The simulations of the controller tests run hundreds of thousands of frames: unoptimised, the strobe
+# tests alone took seven minutes in CI.
+[profile.test]
+opt-level = 3

@@ -205,7 +205,7 @@ class MainActivity : AppCompatActivity() {
         // rejects with "Surface was abandoned".
         camera = NoStrobeCamera(
             manager, option.logicalId, holder.surface, recorder, pwmMode = !intent.getBooleanExtra("strobe_mode", false),
-            // While recording, do not pin a physical lens: on a Pixel 11 Pro Fold the recorder
+            // While recording, do not pin a physical lens: on a foldable the recorder
             // surface of a pinned-lens stream received garbage frames (pure noise). The lock
             // (an exposure that is a multiple of the period) does not depend on the sensor, so
             // the logical camera is fine; the lens chip becomes a zoom ratio instead.
@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
             holdAutoNoSeed = recorder != null,
             forceAutoOnly = intent.getBooleanExtra("force_auto_only", false),
             // Recording: no analysis stream (preview + recorder only). With the third stream a
-            // Pixel 11 Pro Fold wrote pure noise into the clip; the lock is applied open loop.
+            // A foldable wrote pure noise into the clip; the lock is applied open loop.
             dumpProfiles = intent.getBooleanExtra("dump_profiles", false),
             outDir = externalCacheDir ?: cacheDir,
             highSpeedFps = if (recorder != null) hsFps else 0,
@@ -486,7 +486,7 @@ class MainActivity : AppCompatActivity() {
         if (withAudio) r.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
         r.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        // Cap the requested rate (the profile asks 33 Mbit/s at 1080p60). The Pixel's encoder
+        // Cap the requested rate (the profile asks 33 Mbit/s at 1080p60). Some phones' encoders
         // still overshoots on very noisy footage: measured ~143 Mbit/s in a dark scene.
         // A device with no camcorder profile at all gets plain 720p30.
         val rate = p?.videoBitRate ?: 8_000_000

@@ -153,16 +153,16 @@ fn bright_scene_without_flicker_never_locks_without_line_rate() {
 
 #[test]
 fn dark_noisy_scene_never_locks_without_line_rate() {
-    // What the Pixel sees when pointed at a dark room: tiny luma, noise-dominated.
+    // What a phone sees when pointed at a dark room: tiny luma, noise-dominated.
     never_locks_on_flat_scene(0.01, 0.003);
 }
 
-/// Limits a real phone reports (Xperia 1 III): minimum ~0, long maximum, 30 fps only.
+/// Limits a real phone reports: minimum ~0, long maximum, 30 fps only.
 fn phone_limits() -> CameraLimits {
     CameraLimits {
         min_exposure_us: 20.0,
         max_exposure_us: 157_076.0,
-        // The 1080p readout of the Xperia: 1080 rows at 40 kHz = 27 ms. The profile here has 512
+        // The 1080p readout of a real phone: 1080 rows at 40 kHz = 27 ms. The profile here has 512
         // rows read at 40 kHz, so the readout is 12,8 ms and one row is 25 us.
         sustain_us: 12_800.0,
         supported_fps: vec![30.0],
@@ -171,7 +171,7 @@ fn phone_limits() -> CameraLimits {
     }
 }
 
-/// The high-speed surface list the Xperia reports for 1080p: up to 240 fps.
+/// The high-speed surface list a real phone reports for 1080p: up to 240 fps.
 fn high_speed_limits() -> CameraLimits {
     CameraLimits {
         min_exposure_us: 20.0,

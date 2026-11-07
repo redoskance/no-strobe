@@ -918,6 +918,12 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.msg_processing_wait_record), Toast.LENGTH_SHORT).show()
             return
         }
+        // No camera listed (an emulator without one, a TV box): a recorder would start with nothing to record and
+        // leave the screen in a recording state that no frame ever ends.
+        if (lensOptions.isEmpty() || lensOptions.getOrNull(lensIndex) == null) {
+            Toast.makeText(this, getString(R.string.msg_no_camera), Toast.LENGTH_LONG).show()
+            return
+        }
         photoButton.isEnabled = false
         photoButton.alpha = 0.4f
         // The encoder may refuse this configuration (high speed, HEVC, 1080p): once more with the

@@ -11,6 +11,7 @@ import android.graphics.Rect
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.MeteringRectangle
+import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.hardware.camera2.params.OutputConfiguration
@@ -139,6 +140,14 @@ class NoStrobeCamera(
     private var analysisSurface: Surface? = null
     private var photoReader: ImageReader? = null
     private var onPictureCallback: ((ByteArray) -> Unit)? = null
+    /** A still burst in progress: JPEGs and capture results are collected until the pick. */
+    private class Burst(val expected: Int, val onPicture: (ByteArray) -> Unit) {
+        val frames = ArrayList<Pair<Long, ByteArray>>()        // image timestamp -> JPEG
+        val meta = HashMap<Long, Pair<Long, Int>>()            // sensor timestamp -> (exposure ns, ISO)
+        var failed = 0
+        var done = false
+    }
+    @Volatile private var burst: Burst? = null
     val isLocked: Boolean get() = last?.state == NsJni.STATE_LOCKED
     private var probeSinceMs = 0L
     private var restUntilMs = 0L
@@ -421,22 +430,19 @@ class NoStrobeCamera(
             }?.maxByOrNull { it.width.toLong() * it.height }
                 ?: jpegSizes?.maxByOrNull { it.width.toLong() * it.height }
                 ?: Size(1920, 1080)
-            val pr = ImageReader.newInstance(jpegSize.width, jpegSize.height, ImageFormat.JPEG, 2)
+            // One more than the burst: the reader must hold every frame until it is read.
+            val pr = ImageReader.newInstance(jpegSize.width, jpegSize.height, ImageFormat.JPEG, BURST_COUNT + 1)
             pr.setOnImageAvailableListener({ rd ->
-                val img = try { rd.acquireLatestImage() } catch (_: Exception) { null } ?: return@setOnImageAvailableListener
-                try {
-                    val plane = img.planes[0]
-                    val buf = plane.buffer
-                    val bytes = ByteArray(buf.remaining())
-                    buf.get(bytes)
-                    val cb = synchronized(this) {
-                        val c = onPictureCallback
-                        onPictureCallback = null
-                        c
+                while (true) {
+                    val img = try { rd.acquireNextImage() } catch (_: Exception) { null } ?: break
+                    try {
+                        val buf = img.planes[0].buffer
+                        val bytes = ByteArray(buf.remaining())
+                        buf.get(bytes)
+                        onStillFrame(img.timestamp, bytes)
+                    } finally {
+                        img.close()
                     }
-                    cb?.invoke(bytes)
-                } finally {
-                    img.close()
                 }
             }, handler)
             photoReader = pr
@@ -626,35 +632,116 @@ class NoStrobeCamera(
     }
 
     /**
-     * Take a still photo, carrying over the flicker-locked exposure parameters if locked.
+     * Take a still photo as a BURST and keep the best frame: under a strobe some frames are lit by
+     * a pulse and some are not, and a single shot cannot choose. Each frame carries the
+     * flicker-locked exposure when there is a lock. [onPicture] gets the chosen JPEG once.
      */
     fun takePicture(orientation: Int, onPicture: (ByteArray) -> Unit) {
-        val d = device ?: return
-        val s = session ?: return
-        val ps = photoReader?.surface ?: return
-        synchronized(this) {
-            onPictureCallback = onPicture
+        val current = burst
+        if (current != null && !current.done) return  // the previous burst is still running
+        if (!startBurst(orientation, BURST_COUNT, onPicture)) {
+            // The device refused the burst: a single frame, as before, rather than no photo.
+            Log.w(TAG, "burst refused: single capture")
+            startBurst(orientation, 1, onPicture)
         }
+    }
+
+    private fun startBurst(orientation: Int, count: Int, onPicture: (ByteArray) -> Unit): Boolean {
+        val d = device ?: return false
+        val s = session ?: return false
+        val ps = photoReader?.surface ?: return false
+        val b = Burst(count, onPicture)
+        burst = b
         try {
-            val b = d.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-            b.addTarget(ps)
-            applyZoom(b)
-            applyBias(b)
-            applyQuality(b)
-            b.set(CaptureRequest.JPEG_ORIENTATION, orientation)
-            // If flicker/strobe is locked, enforce the exact locked exposure & ISO for the still capture
-            if (last?.state == NsJni.STATE_LOCKED && requestedExposureNs > 0L) {
-                b.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
-                b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, requestedExposureNs)
-                builder?.get(CaptureRequest.SENSOR_SENSITIVITY)?.let { iso ->
-                    b.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
+            val requests = (0 until count).map {
+                val r = d.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                r.addTarget(ps)
+                applyZoom(r)
+                applyBias(r)
+                applyQuality(r)
+                r.set(CaptureRequest.JPEG_ORIENTATION, orientation)
+                // If flicker/strobe is locked, enforce the exact locked exposure & ISO for the still capture
+                if (last?.state == NsJni.STATE_LOCKED && requestedExposureNs > 0L) {
+                    r.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+                    r.set(CaptureRequest.SENSOR_EXPOSURE_TIME, requestedExposureNs)
+                    builder?.get(CaptureRequest.SENSOR_SENSITIVITY)?.let { iso ->
+                        r.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
+                    }
                 }
+                r.build()
             }
-            s.capture(b.build(), null, handler)
+            s.captureBurst(requests, object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(
+                    session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult,
+                ) {
+                    val ts = result.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
+                    val e = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
+                    val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
+                    synchronized(b) { b.meta[ts] = e to iso }
+                    maybeFinishBurst(b)
+                }
+
+                override fun onCaptureFailed(
+                    session: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure,
+                ) {
+                    synchronized(b) { b.failed += 1 }
+                    maybeFinishBurst(b)
+                }
+            }, handler)
+            // Whatever has arrived is used if the pipeline stalls.
+            handler?.postDelayed({ finishBurst(b) }, BURST_TIMEOUT_MS)
+            return true
         } catch (e: Exception) {
-            Log.w(TAG, "takePicture capture failed: ${e.message}")
-            synchronized(this) { onPictureCallback = null }
+            Log.w(TAG, "takePicture burst failed: ${e.message}")
+            b.done = true
+            burst = null
+            return false
         }
+    }
+
+    /** A JPEG of the burst arrived (camera handler thread). */
+    private fun onStillFrame(timestamp: Long, bytes: ByteArray) {
+        val b = burst ?: return
+        synchronized(b) { if (!b.done) b.frames.add(timestamp to bytes) }
+        maybeFinishBurst(b)
+    }
+
+    /** All the frames and results are in (a failed capture counts as answered). */
+    private fun maybeFinishBurst(b: Burst) {
+        val ready = synchronized(b) {
+            !b.done && b.frames.size + b.failed >= b.expected && b.frames.all { b.meta.containsKey(it.first) }
+        }
+        if (ready) finishBurst(b)
+    }
+
+    /** Scores the frames off the camera thread and hands the best one over. */
+    private fun finishBurst(b: Burst) {
+        val frames = synchronized(b) {
+            if (b.done) return
+            b.done = true
+            b.frames.toList()
+        }
+        if (burst === b) burst = null
+        if (frames.isEmpty()) {
+            Log.w(TAG, "burst: no frame arrived")
+            return
+        }
+        Thread {
+            try {
+                val scored = frames.map { (ts, jpeg) ->
+                    val (e, iso) = synchronized(b) { b.meta[ts] } ?: (0L to 0)
+                    BurstPick.analyse(jpeg, e, iso)
+                }
+                val best = BurstPick.pick(scored)
+                Log.i(TAG, "burst: ${frames.size} frames, kept #$best; light " +
+                    scored.joinToString(" ") { "%.2f".format(it.light) } + "; banding " +
+                    scored.joinToString(" ") { "%.3f".format(it.banding) })
+                b.onPicture(frames[best].second)
+            } catch (e: Exception) {
+                Log.w(TAG, "burst pick failed (${e.message}): keeping the first frame")
+                b.onPicture(frames[0].second)
+            }
+        }.start()
     }
 
     /**
@@ -756,7 +843,9 @@ class NoStrobeCamera(
             createSession(d, all, 2); return
         }
         val b = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-        for (s in surfaces) b.addTarget(s)
+        // The JPEG reader belongs to the session but not to the repeating request: it was encoding a
+        // full-resolution JPEG for every preview frame, and a burst would have collected them all.
+        for (s in surfaces) if (s !== photoReader?.surface) b.addTarget(s)
         applyZoom(b)
         applyBias(b)
         applyQuality(b)
@@ -1141,7 +1230,7 @@ class NoStrobeCamera(
             try {
                 // A fresh template request: AE on, no manual exposure, ISO or frame duration.
                 val b = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                for (t in surfaceList) b.addTarget(t)
+                for (t in surfaceList) if (t !== photoReader?.surface) b.addTarget(t)
                 applyZoom(b)
                 applyBias(b)
                 applyQuality(b)
@@ -1175,6 +1264,7 @@ class NoStrobeCamera(
         reader?.close(); reader = null
         photoReader?.close(); photoReader = null
         synchronized(this) { onPictureCallback = null }
+        burst?.let { synchronized(it) { it.done = true } }; burst = null
         strobe?.close(); strobe = null
         pwm?.close(); pwm = null
         requestedExposureNs = 0L
@@ -1211,6 +1301,10 @@ class NoStrobeCamera(
         const val ISO_SOFT_MAX = 3_200.0
         /** ISO the search may use: beyond it the preview and the probes are mostly noise. */
         const val ISO_SEARCH_MAX = 1_600.0
+        /** Frames of a still burst: under a strobe the chance that at least one is not lit by a pulse. */
+        const val BURST_COUNT = 6
+        /** The burst is used as it stands if the pipeline has not delivered everything by then. */
+        const val BURST_TIMEOUT_MS = 3_500L
         /** Lowest frame rate the dim-scene rule goes down to (a clip below this is not a video). */
         const val MIN_DIM_FPS = 24.0
         /** Auto-exposure runs this long before an open-loop recording takes over. */

@@ -449,10 +449,15 @@ class MainActivity : AppCompatActivity() {
         ) return  // started again from onRequestPermissionsResult
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         if (lensOptions.isEmpty()) {
-            lensOptions = LensOptions.list(manager)
+            lensOptions = try { LensOptions.list(manager) } catch (e: Exception) { emptyList() }
             lensIndex = LensOptions.defaultIndex(lensOptions)
         }
-        val option = lensOptions[lensIndex]
+        // No camera listed (an emulator without one, a TV box): say so instead of an index error.
+        val option = lensOptions.getOrNull(lensIndex)
+        if (option == null) {
+            Toast.makeText(this, "Aucune caméra détectée sur cet appareil.", Toast.LENGTH_LONG).show()
+            return
+        }
         try {
             configureZoom(manager, option)
             configureExposure(manager, option)

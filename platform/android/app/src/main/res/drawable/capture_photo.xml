@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera Still Shutter Ring -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#44000000" />
+            <stroke android:width="2.5dp" android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+    <!-- Inner Icon -->
+    <item
+        android:bottom="14dp"
+        android:left="14dp"
+        android:right="14dp"
+        android:top="14dp"
+        android:drawable="@drawable/ic_camera" />
+</layer-list>

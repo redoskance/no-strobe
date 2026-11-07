@@ -40,6 +40,13 @@
             android:src="@drawable/focus_ring"
             android:visibility="gone" />
 
+        <View
+            android:id="@+id/shutterFlash"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FFFFFFFF"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/status"
             android:layout_width="wrap_content"
@@ -226,6 +233,17 @@
                 android:textColor="@color/icon_tint"
                 android:textSize="10sp"
                 android:visibility="gone" />
+
+            <View
+                android:id="@+id/photo"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="72dp"
+                android:background="@drawable/capture_photo"
+                android:clickable="true"
+                android:contentDescription="photo"
+                android:focusable="true" />
 
             <View
                 android:id="@+id/record"

@@ -113,6 +113,7 @@ class GalleryActivity : AppCompatActivity() {
         galleryTitle = findViewById(R.id.galleryTitle)
 
         findViewById<View>(R.id.galleryBack).setOnClickListener { finish() }
+        findViewById<View>(R.id.galleryServer).setOnClickListener { LanServerConfig.showDialog(this) }
         findViewById<View>(R.id.galleryShare).setOnClickListener { shareCurrentVideo() }
         findViewById<View>(R.id.galleryDelete).setOnClickListener { confirmDeleteCurrentClip() }
 
@@ -194,6 +195,10 @@ class GalleryActivity : AppCompatActivity() {
 
         btnProcessLocal.setOnClickListener { startLocalPostProcessing() }
         btnProcessDesktop.setOnClickListener { startDesktopPostProcessing() }
+        btnProcessDesktop.setOnLongClickListener {
+            LanServerConfig.showDialog(this)
+            true
+        }
 
         loadClips(intent.getStringExtra("clip_path"))
     }
@@ -457,7 +462,30 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun startLocalPostProcessing() {
+        if (OnDevicePost.isProcessing) {
+            Toast.makeText(this, "Un post-traitement est déjà en cours d'exécution.", Toast.LENGTH_SHORT).show()
+            return
+        }
         val pair = clipPairs.getOrNull(selectedIndex) ?: return
+        val freeBytes = (getExternalFilesDir(null) ?: filesDir).usableSpace
+        val srcLength = pair.originalFile?.length() ?: 0L
+        if (freeBytes < 500 * 1024 * 1024L || (srcLength > 0 && freeBytes < srcLength * 3)) {
+            AlertDialog.Builder(this)
+                .setTitle("Stockage faible sur le téléphone")
+                .setMessage("Il ne reste que ${freeBytes / (1024 * 1024)} Mo d'espace libre. Le réencodage local risque d'échouer. Souhaitez-vous déporter le traitement sur votre serveur LAN ?")
+                .setPositiveButton("Utiliser le serveur LAN") { _, _ ->
+                    startDesktopPostProcessing()
+                }
+                .setNegativeButton("Continuer en local") { _, _ ->
+                    executeLocalPost(pair)
+                }
+                .show()
+            return
+        }
+        executeLocalPost(pair)
+    }
+
+    private fun executeLocalPost(pair: ClipPair) {
         val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips").apply { mkdirs() }
 
         postProgressContainer.visibility = View.VISIBLE
@@ -510,20 +538,21 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun startDesktopPostProcessing() {
-        val prefs = getSharedPreferences("nostrobe", MODE_PRIVATE)
-        val base = prefs.getString("post_url", "") ?: ""
+        val base = LanServerConfig.getServerUrl(this)
         if (base.isBlank()) {
-            Toast.makeText(this, "Configurez l'adresse du serveur desktop dans les options de la caméra", Toast.LENGTH_LONG).show()
+            LanServerConfig.showDialog(this) { _, _ ->
+                startDesktopPostProcessing()
+            }
             return
         }
         val pair = clipPairs.getOrNull(selectedIndex) ?: return
         val clipsDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "clips").apply { mkdirs() }
-        val token = prefs.getString("post_token", "") ?: ""
+        val token = LanServerConfig.getServerToken(this)
         val dst = File(clipsDir, pair.baseName + "-fixed.mp4")
 
         postProgressContainer.visibility = View.VISIBLE
         postProgressBar.progress = 0
-        postProgressText.text = "Envoi vers le desktop: 0 %"
+        postProgressText.text = "Envoi vers le serveur LAN: 0 %"
         btnProcessDesktop.isEnabled = false
 
         Thread {
@@ -543,7 +572,7 @@ class GalleryActivity : AppCompatActivity() {
                 DesktopPost.send(srcFile, dst, base, token, lineRateHz) { pct ->
                     runOnUiThread {
                         postProgressBar.progress = pct
-                        postProgressText.text = "Desktop: $pct %"
+                        postProgressText.text = "Serveur LAN: $pct %"
                     }
                 }
                 saveToGallery(dst, dst.name)
@@ -552,7 +581,7 @@ class GalleryActivity : AppCompatActivity() {
                     btnProcessDesktop.isEnabled = true
                     pair.fixedFile = dst
                     isShowingFixed = true
-                    Toast.makeText(this, "Correction desktop terminée !", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Correction sur serveur LAN terminée !", Toast.LENGTH_SHORT).show()
                     refreshStrip()
                     displayClip(pair, initial = false)
                 }
@@ -560,7 +589,7 @@ class GalleryActivity : AppCompatActivity() {
                 runOnUiThread {
                     postProgressContainer.visibility = View.GONE
                     btnProcessDesktop.isEnabled = true
-                    Toast.makeText(this, "Erreur desktop: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Erreur serveur LAN: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()

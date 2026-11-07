@@ -25,16 +25,24 @@ object LensOptions {
             val chars = manager.getCameraCharacteristics(id)
             val facing = chars.get(CameraCharacteristics.LENS_FACING)
             val isFront = facing == CameraCharacteristics.LENS_FACING_FRONT
+            if (isFront) {
+                // Front cameras on foldables switch between outer (cover) and inner physical sensors
+                // dynamically based on device fold state. Pinning a physical camera breaks
+                // when the fold state changes (the other physical sensor is disabled by HAL).
+                val mm = equivMm(chars)
+                front.add(LensOption("front", id, null, mm))
+                continue
+            }
             val physical = chars.physicalCameraIds
             if (physical.isNotEmpty()) {
                 for (pid in physical) {
                     val mm = equivMm(manager.getCameraCharacteristics(pid))
-                    (if (isFront) front else back).add(LensOption(name(mm, isFront), id, pid, mm))
+                    back.add(LensOption(name(mm, false), id, pid, mm))
                 }
-                if (!isFront) auto.add(LensOption("auto (phone switches lens)", id, null, 0.0))
+                auto.add(LensOption("auto (phone switches lens)", id, null, 0.0))
             } else {
                 val mm = equivMm(chars)
-                (if (isFront) front else back).add(LensOption(name(mm, isFront), id, null, mm))
+                back.add(LensOption(name(mm, false), id, null, mm))
             }
         }
         return back.sortedBy { it.equivMm } + front.sortedBy { it.equivMm } + auto

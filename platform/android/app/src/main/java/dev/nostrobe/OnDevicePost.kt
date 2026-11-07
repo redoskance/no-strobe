@@ -25,20 +25,46 @@ object OnDevicePost {
 
     class PostException(message: String) : Exception(message)
 
+    @Volatile
+    var isProcessing: Boolean = false
+        private set
+
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    fun addListener(listener: (Boolean) -> Unit) {
+        listeners.add(listener)
+    }
+
+    fun removeListener(listener: (Boolean) -> Unit) {
+        listeners.remove(listener)
+    }
+
     fun fix(src: File, dst: File, lineRateHz: Double = 0.0, onProgress: (Int) -> Unit) {
         if (!src.exists() || src.length() == 0L) {
             throw PostException("Le fichier source n'existe pas ou est vide")
         }
-        val means = ArrayList<Double>()
-        // Pass 1: measure luma per frame (0% - 30% progress)
-        decode(src, onFrame = { image, _ -> means.add(meanLuma(image)) }, onDecodeProgress = { pct ->
-            onProgress((pct * 0.3).toInt())
-        })
-        if (means.isEmpty()) throw PostException("no frames decoded")
-        val gains = temporalGain(means.toDoubleArray(), WINDOW, MAX_GAIN)
-        // Pass 2: apply gains and encode (30% - 100% progress)
-        encodeWithGains(src, dst, gains, lineRateHz) { pct ->
-            onProgress(30 + (pct * 0.7).toInt())
+        synchronized(this) {
+            if (isProcessing) throw PostException("Un post-traitement est déjà en cours d'exécution")
+            isProcessing = true
+            listeners.forEach { it(true) }
+        }
+        try {
+            val means = ArrayList<Double>()
+            // Pass 1: measure luma per frame (0% - 30% progress)
+            decode(src, onFrame = { image, _ -> means.add(meanLuma(image)) }, onDecodeProgress = { pct ->
+                onProgress((pct * 0.3).toInt())
+            })
+            if (means.isEmpty()) throw PostException("no frames decoded")
+            val gains = temporalGain(means.toDoubleArray(), WINDOW, MAX_GAIN)
+            // Pass 2: apply gains and encode (30% - 100% progress)
+            encodeWithGains(src, dst, gains, lineRateHz) { pct ->
+                onProgress(30 + (pct * 0.7).toInt())
+            }
+        } finally {
+            synchronized(this) {
+                isProcessing = false
+                listeners.forEach { it(false) }
+            }
         }
     }
 

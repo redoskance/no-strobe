@@ -127,6 +127,9 @@ class NoStrobeCamera(
     // The lens actually pinned by the session that is running (null: the logical camera).
     private var activePhysicalId: String? = null
     private var analysisSurface: Surface? = null
+    private var photoReader: ImageReader? = null
+    private var onPictureCallback: ((ByteArray) -> Unit)? = null
+    val isLocked: Boolean get() = last?.state == NsJni.STATE_LOCKED
     private var probeSinceMs = 0L
     private var restUntilMs = 0L
 
@@ -371,8 +374,38 @@ class NoStrobeCamera(
         reader = r
         analysisSurface = r.surface
 
-        val normalSurfaces = listOf(previewSurface, r.surface) +
-            (recorder?.surface?.let { listOf(it) } ?: emptyList())
+        val normalSurfaces = if (recorder != null) {
+            listOf(previewSurface, r.surface, recorder.surface)
+        } else {
+            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)
+            val targetRatio = 16f / 9f
+            val jpegSize = jpegSizes?.filter { s ->
+                val ratio = s.width.toFloat() / s.height.toFloat()
+                kotlin.math.abs(ratio - targetRatio) < 0.05f
+            }?.maxByOrNull { it.width.toLong() * it.height }
+                ?: jpegSizes?.maxByOrNull { it.width.toLong() * it.height }
+                ?: Size(1920, 1080)
+            val pr = ImageReader.newInstance(jpegSize.width, jpegSize.height, ImageFormat.JPEG, 2)
+            pr.setOnImageAvailableListener({ rd ->
+                val img = try { rd.acquireLatestImage() } catch (_: Exception) { null } ?: return@setOnImageAvailableListener
+                try {
+                    val plane = img.planes[0]
+                    val buf = plane.buffer
+                    val bytes = ByteArray(buf.remaining())
+                    buf.get(bytes)
+                    val cb = synchronized(this) {
+                        val c = onPictureCallback
+                        onPictureCallback = null
+                        c
+                    }
+                    cb?.invoke(bytes)
+                } finally {
+                    img.close()
+                }
+            }, handler)
+            photoReader = pr
+            listOf(previewSurface, r.surface, pr.surface)
+        }
         // High-speed: the session takes one or two surfaces and no analysis stream; we give it
         // the recorder only. The normal set is kept for the fallback when the device refuses.
         val hsSurfaces = recorder?.surface?.let { listOf(it) }
@@ -544,6 +577,38 @@ class NoStrobeCamera(
             session?.setRepeatingRequest(b.build(), resultCallback, handler)
         } catch (e: Exception) {
             Log.w(TAG, "zoom not applied: ${e.message}")
+        }
+    }
+
+    /**
+     * Take a still photo, carrying over the flicker-locked exposure parameters if locked.
+     */
+    fun takePicture(orientation: Int, onPicture: (ByteArray) -> Unit) {
+        val d = device ?: return
+        val s = session ?: return
+        val ps = photoReader?.surface ?: return
+        synchronized(this) {
+            onPictureCallback = onPicture
+        }
+        try {
+            val b = d.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            b.addTarget(ps)
+            applyZoom(b)
+            applyBias(b)
+            applyQuality(b)
+            b.set(CaptureRequest.JPEG_ORIENTATION, orientation)
+            // If flicker/strobe is locked, enforce the exact locked exposure & ISO for the still capture
+            if (last?.state == NsJni.STATE_LOCKED && requestedExposureNs > 0L) {
+                b.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+                b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, requestedExposureNs)
+                builder?.get(CaptureRequest.SENSOR_SENSITIVITY)?.let { iso ->
+                    b.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
+                }
+            }
+            s.capture(b.build(), null, handler)
+        } catch (e: Exception) {
+            Log.w(TAG, "takePicture capture failed: ${e.message}")
+            synchronized(this) { onPictureCallback = null }
         }
     }
 
@@ -1038,6 +1103,8 @@ class NoStrobeCamera(
         session?.close(); session = null
         device?.close(); device = null
         reader?.close(); reader = null
+        photoReader?.close(); photoReader = null
+        synchronized(this) { onPictureCallback = null }
         strobe?.close(); strobe = null
         pwm?.close(); pwm = null
         requestedExposureNs = 0L

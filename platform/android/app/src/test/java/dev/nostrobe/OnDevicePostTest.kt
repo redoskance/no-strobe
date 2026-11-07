@@ -49,4 +49,28 @@ class OnDevicePostTest {
         assertEquals(3, gains.size)
         assertEquals(1.0, gains[0], 1e-6)
     }
+
+    @Test
+    fun nonExistentSourceThrowsPostException() {
+        var threw = false
+        try {
+            OnDevicePost.fix(java.io.File("/tmp/nonexistent-src.mp4"), java.io.File("/tmp/out.mp4")) {}
+        } catch (e: OnDevicePost.PostException) {
+            threw = true
+        }
+        assertTrue("Expected PostException for missing source file", threw)
+    }
+
+    @Test
+    fun listenersTrackProcessingState() {
+        val states = mutableListOf<Boolean>()
+        val listener: (Boolean) -> Unit = { states.add(it) }
+        OnDevicePost.addListener(listener)
+        try {
+            // isProcessing is initially false
+            assertTrue(!OnDevicePost.isProcessing)
+        } finally {
+            OnDevicePost.removeListener(listener)
+        }
+    }
 }

@@ -234,6 +234,64 @@
                     android:textColor="@color/m3_on_surface" />
             </LinearLayout>
 
+            <!-- Mode switcher on top of the shutter / bottom panel: VIDÉO / PHOTO / STROBE -->
+            <LinearLayout
+                android:id="@+id/modeSwitchRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="2dp"
+                android:background="@drawable/bg_lens_chip"
+                android:orientation="horizontal"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="3dp">
+
+                <TextView
+                    android:id="@+id/modeVideo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_mode_selected"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="4dp"
+                    android:text="@string/mode_video"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/modePhoto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="4dp"
+                    android:text="@string/mode_photo"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/modeStrobe"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="4dp"
+                    android:text="@string/mode_strobe"
+                    android:textColor="@color/m3_on_surface"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
         </dev.nostrobe.MaxWidthLinearLayout>
     </FrameLayout>
 
@@ -249,7 +307,7 @@
             android:id="@+id/post"
             android:layout_width="56dp"
             android:layout_height="56dp"
-            android:layout_margin="6dp"
+            android:layout_margin="8dp"
             android:background="@drawable/bg_tool"
             android:clickable="true"
             android:drawableTint="@color/icon_tint"
@@ -259,90 +317,34 @@
             android:paddingTop="8dp"
             android:text="@string/btn_gallery"
             android:textColor="@color/icon_tint"
-            android:textSize="10sp" android:visibility="gone" />
+            android:textSize="10sp"
+            android:visibility="gone" />
 
         <View
             android:id="@+id/photo"
             android:layout_width="54dp"
             android:layout_height="54dp"
-            android:layout_margin="6dp"
+            android:layout_margin="8dp"
             android:background="@drawable/capture_photo"
             android:clickable="true"
             android:contentDescription="photo"
             android:focusable="true" />
 
-        <!-- Mode switcher on top of the shutter button: VIDÉO / PHOTO -->
-        <LinearLayout
-            android:id="@+id/modeSwitchRow"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginVertical="6dp"
-            android:background="@drawable/bg_lens_chip"
-            android:orientation="vertical"
-            android:paddingHorizontal="3dp"
-            android:paddingVertical="2dp">
-
-            <TextView
-                android:id="@+id/modeVideo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_mode_selected"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="@string/mode_video"
-                android:textColor="@color/m3_on_surface"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/modePhoto"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="@string/mode_photo"
-                android:textColor="@color/m3_on_surface"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/modeStrobe"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="4dp"
-                android:text="@string/mode_strobe"
-                android:textColor="@color/m3_on_surface"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-
-        </LinearLayout>
-
         <View
-                android:id="@+id/record"
-                android:layout_width="76dp"
-                android:layout_margin="10dp"
-                android:layout_height="76dp"
-                android:background="@drawable/capture_button"
-                android:clickable="true"
-                android:contentDescription="record"
-                android:focusable="true" />
+            android:id="@+id/record"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
+            android:layout_margin="12dp"
+            android:background="@drawable/capture_button"
+            android:clickable="true"
+            android:contentDescription="record"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/flip"
             android:layout_width="56dp"
             android:layout_height="56dp"
-            android:layout_margin="6dp"
+            android:layout_margin="8dp"
             android:background="@drawable/bg_tool"
             android:clickable="true"
             android:drawableTint="@color/icon_tint"

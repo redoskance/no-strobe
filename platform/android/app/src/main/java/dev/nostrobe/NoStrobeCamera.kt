@@ -305,6 +305,8 @@ class NoStrobeCamera(
         return abs(actualNs - requestedNs) <= tol
     }
 
+    // The caller (MainActivity.startCamera) checks the CAMERA permission before it gets here.
+    @android.annotation.SuppressLint("MissingPermission")
     fun start() {
         stopped = false
         Log.i(TAG, "controller: ${if (pwmMode) "pwm (100 Hz - 5 kHz, row profile)" else "strobe (slow flashes, frame luma)"}")
@@ -331,9 +333,9 @@ class NoStrobeCamera(
         sustainUs = limits.sustainUs
         // Android 16: the app fixes the exposure time and the camera's AE picks the ISO
         // (CONTROL_AE_PRIORITY_MODE). The keys are not in android.jar at compileSdk 34.
-        val prio = try {
+        val prio = if (Build.VERSION.SDK_INT >= 29) try {
             chars.get(CameraCharacteristics.Key("android.control.aeAvailablePriorityModes", IntArray::class.java))
-        } catch (_: Exception) { null }
+        } catch (_: Throwable) { null } else null
         Log.i(TAG, "AE priority modes: ${prio?.joinToString(",") ?: "none"}")
         Log.i(TAG, "limits: exposure %.0f..%.0f us, sustain %.0f us, iso %.0f..%.0f, fps %s".format(
             limits.minExposureUs, limits.maxExposureUs, limits.sustainUs, limits.minIso, limits.maxIso,

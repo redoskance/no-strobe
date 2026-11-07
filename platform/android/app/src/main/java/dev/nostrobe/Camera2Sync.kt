@@ -30,11 +30,18 @@ object Camera2Sync {
         // built from its name. Devices that do not define the tag throw
         // IllegalArgumentException from CameraCharacteristics.get, so the read is guarded;
         // they get sustain = 0 and the PWM path hill-climbs.
-        val sustainKey = CameraCharacteristics.Key(
-            "android.sensor.info.rolling_shutter_sustain_duration",
-            java.lang.Long::class.java,
-        )
-        val sustain = runCatching { chars.get(sustainKey) }.getOrNull()
+        // The Key(String, Class) constructor is public API from 29; on Android 9 it is hidden and
+        // may be missing (NoSuchMethodError is an Error, not an Exception: catch Throwable).
+        val sustain: Long? = if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                chars.get(
+                    CameraCharacteristics.Key(
+                        "android.sensor.info.rolling_shutter_sustain_duration",
+                        java.lang.Long::class.java,
+                    )
+                )?.toLong()
+            } catch (_: Throwable) { null }
+        } else null
 
         val fps = fpsRanges?.map { it.upper.toDouble() }?.toDoubleArray()
             ?: doubleArrayOf(30.0)

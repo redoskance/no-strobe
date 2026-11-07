@@ -190,9 +190,14 @@ object OnDevicePost {
         lineRateHz: Double,
         onProgress: (Int) -> Unit
     ) {
-        val rotation = MediaMetadataRetriever().use { r ->
-            r.setDataSource(srcFile.path)
-            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        // MediaMetadataRetriever is AutoCloseable only from API 29: release it by hand (minSdk 28).
+        val rotation = MediaMetadataRetriever().let { r ->
+            try {
+                r.setDataSource(srcFile.path)
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            } finally {
+                r.release()
+            }
         }
         // The audio track (if any) is copied as is, so the fixed clip keeps its sound.
         val audioEx = MediaExtractor().apply { setDataSource(srcFile.path) }
@@ -300,7 +305,10 @@ object OnDevicePost {
                 while (true) {
                     val n = audioEx.readSampleData(buf, 0)
                     if (n < 0) break
-                    bi.set(0, n, audioEx.sampleTime, audioEx.sampleFlags)
+                    // MediaExtractor sample flags are not MediaCodec buffer flags: map the sync bit only.
+                    val flags = if (audioEx.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0)
+                        MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                    bi.set(0, n, audioEx.sampleTime, flags)
                     muxer!!.writeSampleData(audioTrackOut, buf, bi)
                     audioEx.advance()
                 }
